@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Tic Tac Toe</string>
+    <string name="desc_back">Back</string>
+    <string name="desc_sound">Sound setting</string>
+    <string name="desc_vibration">Vibration setting</string>
+    <string name="desc_theme">Theme setting</string>
+    <string name="desc_bot">Bot difficulty</string>
+    <string name="desc_avatar">Player avatar</string>
+</resources>

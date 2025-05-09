@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:background="#2D1863"
+    android:padding="32dp">
+
+    <Button
+        android:id="@+id/btnPlay3x3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Chơi TicTacToe 3x3"
+        android:textSize="20sp"
+        android:layout_marginBottom="24dp"/>
+
+    <Button
+        android:id="@+id/btnPlay16x16"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Chơi TicTacToe 16x16"
+        android:textSize="20sp"/>
+</LinearLayout>
