@@ -30,7 +30,7 @@
                 android:id="@+id/tvTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Tic tac Toe"
+                android:text="@string/app_name"
                 android:textSize="24sp"
                 android:textStyle="bold"
                 android:textColor="#4EE6FA"
@@ -41,7 +41,7 @@
                 android:id="@+id/tvSettings"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Settings"
+                android:text="@string/settings"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="#FFFFFF"
@@ -53,7 +53,7 @@
                 android:id="@+id/tvGameOptions"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="GAME OPTIONS"
+                android:text="@string/game_options"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:textSize="13sp"
@@ -95,7 +95,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Sound"
+                            android:text="@string/sound"
                             android:textColor="#FFFFFF"
                             android:textSize="16sp"
                             android:layout_marginStart="12dp"/>
@@ -105,7 +105,8 @@
                             android:layout_height="wrap_content"
                             android:thumbTint="@color/yellow"
                             android:trackTint="@color/yellow_light"
-                            android:text=""/>
+                            android:text=""
+                            android:contentDescription="@string/desc_sound"/>
                     </LinearLayout>
 
                     <!-- Vibration -->
@@ -124,7 +125,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Vibration"
+                            android:text="@string/vibration"
                             android:textColor="#FFFFFF"
                             android:textSize="16sp"
                             android:layout_marginStart="12dp"/>
@@ -134,7 +135,8 @@
                             android:layout_height="wrap_content"
                             android:thumbTint="@color/purple_200"
                             android:trackTint="@color/purple_100"
-                            android:text=""/>
+                            android:text=""
+                            android:contentDescription="@string/desc_vibration"/>
                     </LinearLayout>
 
                     <!-- Theme -->
@@ -153,7 +155,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Theme"
+                            android:text="@string/theme"
                             android:textColor="#FFFFFF"
                             android:textSize="16sp"
                             android:layout_marginStart="12dp"/>
@@ -175,7 +177,7 @@
                 android:id="@+id/tvGameplay"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="GAMEPLAY"
+                android:text="@string/gameplay"
                 android:textColor="#7B6FC6"
                 android:textStyle="bold"
                 android:textSize="13sp"
@@ -210,7 +212,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bot Difficulty"
+                        android:text="@string/bot_difficulty"
                         android:textColor="#FFFFFF"
                         android:textSize="16sp"
                         android:layout_marginStart="12dp"
@@ -224,19 +226,19 @@
                             android:id="@+id/rbEasy"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Easy"
+                            android:text="@string/easy"
                             android:textColor="#B0A9D1"/>
                         <RadioButton
                             android:id="@+id/rbMedium"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Medium"
+                            android:text="@string/medium"
                             android:textColor="#4EE6FA"/>
                         <RadioButton
                             android:id="@+id/rbHard"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Hard"
+                            android:text="@string/hard"
                             android:textColor="#B0A9D1"/>
                     </RadioGroup>
                 </LinearLayout>
@@ -277,14 +279,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Player1"
+                            android:text="@string/player1"
                             android:textColor="#FFFFFF"
                             android:textSize="18sp"
                             android:textStyle="bold"/>
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Edit Profile"
+                            android:text="@string/edit_profile"
                             android:textColor="#4EE6FA"
                             android:textSize="14sp"/>
                     </LinearLayout>
