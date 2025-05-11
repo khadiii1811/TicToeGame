@@ -7,4 +7,16 @@
     <string name="desc_theme">Theme setting</string>
     <string name="desc_bot">Bot difficulty</string>
     <string name="desc_avatar">Player avatar</string>
+    <string name="settings">Settings</string>
+    <string name="game_options">GAME OPTIONS</string>
+    <string name="gameplay">GAMEPLAY</string>
+    <string name="sound">Sound</string>
+    <string name="vibration">Vibration</string>
+    <string name="theme">Theme</string>
+    <string name="bot_difficulty">Bot Difficulty</string>
+    <string name="easy">Easy</string>
+    <string name="medium">Medium</string>
+    <string name="hard">Hard</string>
+    <string name="player1">Player1</string>
+    <string name="edit_profile">Edit Profile</string>
 </resources>
