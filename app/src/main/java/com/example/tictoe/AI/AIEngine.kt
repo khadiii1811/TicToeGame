@@ -1,28 +1,37 @@
 package com.example.tictoe.AI
 
+import kotlin.math.abs
+
 object AIEngine {
     private const val EMPTY = 0
     private const val PLAYER = 1
     private const val AI = 2
-    private const val MAX_TIME_MS = 300L
 
-    fun findBestMove(board: Array<IntArray>, depth: Int): Pair<Int, Int>? {
-        val deadline = System.currentTimeMillis() + MAX_TIME_MS
+    private const val MAX_TIME_MS = 1000L
+    private const val WIN_SCORE = 1000000
+    private var timeStart: Long = 0
 
+
+    public fun findBestMove(board: Array<IntArray>, depth: Int): Pair<Int, Int>? {
+        timeStart = System.currentTimeMillis()
         var bestScore = Int.MIN_VALUE
         var bestMove: Pair<Int, Int>? = null
 
-        for ((x, y) in getAvailableMoves(board)) {
+        val moves = getAvailableMoves(board).shuffled().sortedByDescending { (x, y) ->
+            scoreMove(board, x, y, AI) // Heuristic for move ordering
+        }
+
+        for ((x, y) in moves) {
+            if (System.currentTimeMillis() - timeStart >= MAX_TIME_MS) break
+
             board[x][y] = AI
-            val score = minimax(board, depth - 1, Int.MIN_VALUE, Int.MAX_VALUE, false, deadline)
+            val score = minimax(board, depth - 1, alpha = Int.MIN_VALUE, beta = Int.MAX_VALUE, isMaximizing = false)
             board[x][y] = EMPTY
 
             if (score > bestScore) {
                 bestScore = score
                 bestMove = Pair(x, y)
             }
-
-            if (System.currentTimeMillis() >= deadline) break
         }
 
         return bestMove
@@ -31,50 +40,51 @@ object AIEngine {
     private fun minimax(
         board: Array<IntArray>,
         depth: Int,
-        alphaInit: Int,
-        betaInit: Int,
-        isMaximizing: Boolean,
-        deadline: Long
+        alpha: Int,
+        beta: Int,
+        isMaximizing: Boolean
     ): Int {
-        if (System.currentTimeMillis() >= deadline) return evaluateBoard(board)
+        var alphaVar = alpha
+        var betaVar = beta
 
-        var alpha = alphaInit
-        var beta = betaInit
+        val score = evaluateBoard(board)
+        if (depth == 0 || isGameOver(board) ||
+            System.currentTimeMillis() - timeStart >= MAX_TIME_MS) {
+            return score
+        }
 
-        if (depth == 0) return evaluateBoard(board)
-
-        val mark = if (isMaximizing) AI else PLAYER
-        val moves = getAvailableMoves(board)
-            .map { move -> Pair(move, scoreMove(board, move.first, move.second, mark)) }
-            .sortedByDescending { it.second }
-
-        if (moves.isEmpty()) return 0
+        val moves = getAvailableMoves(board).shuffled().sortedByDescending { (x, y) ->
+            scoreMove(board, x, y, if (isMaximizing) AI else PLAYER)
+        }
 
         return if (isMaximizing) {
-            var maxEval = Int.MIN_VALUE
-            for ((move, _) in moves) {
-                val (x, y) = move
+            var best = Int.MIN_VALUE
+            for ((x, y) in moves) {
                 board[x][y] = AI
-                val eval = minimax(board, depth - 1, alpha, beta, false, deadline)
+                best = maxOf(best, minimax(board, depth - 1, alphaVar, betaVar, false))
                 board[x][y] = EMPTY
-                maxEval = maxOf(maxEval, eval)
-                alpha = maxOf(alpha, eval)
-                if (beta <= alpha) break
+
+                alphaVar = maxOf(alphaVar, best)
+                if (betaVar <= alphaVar) break // Beta cut-off
             }
-            maxEval
+            best
         } else {
-            var minEval = Int.MAX_VALUE
-            for ((move, _) in moves) {
-                val (x, y) = move
+            var best = Int.MAX_VALUE
+            for ((x, y) in moves) {
                 board[x][y] = PLAYER
-                val eval = minimax(board, depth - 1, alpha, beta, true, deadline)
+                best = minOf(best, minimax(board, depth - 1, alphaVar, betaVar, true))
                 board[x][y] = EMPTY
-                minEval = minOf(minEval, eval)
-                beta = minOf(beta, eval)
-                if (beta <= alpha) break
+
+                betaVar = minOf(betaVar, best)
+                if (betaVar <= alphaVar) break // Alpha cut-off
             }
-            minEval
+            best
         }
+    }
+
+    private fun isGameOver(board: Array<IntArray>): Boolean {
+        val score = evaluateBoard(board)
+        return abs(score) >= WIN_SCORE
     }
 
     private fun evaluateBoard(board: Array<IntArray>): Int {
@@ -91,12 +101,14 @@ object AIEngine {
 
         for (x in 0 until rows) {
             for (y in 0 until cols) {
-                val mark = board[x][y]
-                if (mark != EMPTY) {
-                    for ((dx, dy) in directions) {
-                        if (isStartOfLine(board, x, y, dx, dy, mark)) {
-                            val pattern = countPattern(board, x, y, dx, dy, mark)
-                            score += patternScoreWithOpenEnds(pattern.first, pattern.second, mark)
+                for (mark in listOf(AI, PLAYER)) {
+                    if (board[x][y] == mark) {
+                        for ((dx, dy) in directions) {
+                            if (isStartOfLine(board, x, y, dx, dy, mark)) {
+                                val (count, openEnds) = countPattern(board, x, y, dx, dy, mark)
+                                val patternScore = patternScoreWithOpenEnds(count, openEnds)
+                                score += if (mark == AI) patternScore else -patternScore * 2 // Strong penalty
+                            }
                         }
                     }
                 }
@@ -113,7 +125,7 @@ object AIEngine {
     }
 
     // Returns (count, openEnds)
-    fun countPattern(board: Array<IntArray>, x: Int, y: Int, dx: Int, dy: Int, mark: Int): Pair<Int, Int> {
+    private fun countPattern(board: Array<IntArray>, x: Int, y: Int, dx: Int, dy: Int, mark: Int): Pair<Int, Int> {
         var count = 1
         var openEnds = 0
 
@@ -144,19 +156,17 @@ object AIEngine {
         return Pair(count, openEnds)
     }
 
-    // Pattern scoring with open ends
-    fun patternScoreWithOpenEnds(count: Int, openEnds: Int, mark: Int): Int {
-        val score = when {
-            count >= 5 -> 100000
-            count == 4 && openEnds == 2 -> 10000     // open four
-            count == 4 && openEnds == 1 -> 5000      // closed four
-            count == 3 && openEnds == 2 -> 1000      // open three
-            count == 3 && openEnds == 1 -> 300       // closed three
-            count == 2 && openEnds == 2 -> 100       // open two
-            count == 2 && openEnds == 1 -> 10        // closed two
+    private fun patternScoreWithOpenEnds(count: Int, openEnds: Int): Int {
+        return when {
+            count >= 5 -> 1000000
+            count == 4 && openEnds == 2 -> 100000
+            count == 4 && openEnds == 1 -> 10000
+            count == 3 && openEnds == 2 -> 1000
+            count == 3 && openEnds == 1 -> 100
+            count == 2 && openEnds == 2 -> 50
+            count == 2 && openEnds == 1 -> 10
             else -> 0
         }
-        return if (mark == AI) score else -score
     }
 
     private fun scoreMove(board: Array<IntArray>, x: Int, y: Int, mark: Int): Int {
