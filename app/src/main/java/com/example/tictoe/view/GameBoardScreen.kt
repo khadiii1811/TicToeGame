@@ -3,23 +3,16 @@ package com.example.tictoe.view
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.EmojiEvents
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.ripple.rememberRipple
+import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,11 +22,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -42,53 +32,80 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tictoe.R
+import com.example.tictoe.ui.components.*
+import com.example.tictoe.ui.theme.AppColors
+import com.example.tictoe.ui.theme.GlowingBackgroundEffect
+import com.example.tictoe.ui.theme.PulseEffect
+import com.example.tictoe.view.components.*
+import com.example.tictoe.viewmodel.GameViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.random.Random
-
-// Define ParticleData class at file level instead of inside composable function
-private data class ParticleData(
-    val xPos: Float, 
-    val yPos: Float, 
-    val particleSize: Float, 
-    val alphaValue: Float, 
-    val xSpeed: Float, 
-    val ySpeed: Float
-)
 
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
 fun GameBoardScreen(
     onBackClick: () -> Unit = {},
-    onPlayAgain: () -> Unit = {}
+    onPlayAgain: () -> Unit = {},
+    isVsBot: Boolean = false,
+    viewModel: GameViewModel
 ) {
-    // State for the game
-    var currentTurn by remember { mutableStateOf("X") } // X or O
-    var gameWinner by remember { mutableStateOf("") } // X, O or "Draw"
-    var gameBoard by remember { mutableStateOf(Array(3) { Array(3) { "" } }) }
+    // Collect state from ViewModel with safe default values
+    val currentTurn by viewModel.currentTurn.collectAsState()
+    val gameWinner by viewModel.gameWinner.collectAsState() 
+    val gameBoard by viewModel.gameBoard.collectAsState()
+    val winningLine by viewModel.winningLine.collectAsState()
+    val showGameEndDialog by viewModel.showGameEndDialog.collectAsState()
+    val isBotThinking by viewModel.isBotThinking.collectAsState()
+    val wins by viewModel.wins.collectAsState()
+    val draws by viewModel.draws.collectAsState()
+    val losses by viewModel.losses.collectAsState()
+    val winRate by viewModel.winRate.collectAsState()
     
-    // Game stats (these would normally be persisted in a real app)
-    var wins by remember { mutableIntStateOf(8) }
-    var draws by remember { mutableIntStateOf(2) }
-    var losses by remember { mutableIntStateOf(0) }
-    var winRate by remember { mutableIntStateOf(80) } // Percentage
+    // Convert winningLine to List<Pair<Int, Int>> if it's not already
+    val winningCells = remember(winningLine) {
+        val line = winningLine
+        if (line != null) {
+            val cells = mutableListOf<Pair<Int, Int>>()
+            for (i in 0..2) {
+                for (j in 0..2) {
+                    if (line.containsCell(i, j)) {
+                        cells.add(Pair(i, j))
+                    }
+                }
+            }
+            cells
+        } else {
+            emptyList()
+        }
+    }
     
     // Animation states
     val coroutineScope = rememberCoroutineScope()
     val boardScale = remember { Animatable(0.8f) }
     val titleOffsetY = remember { Animatable(-100f) }
+    val dialogScale = remember { Animatable(0.8f) }
     
     // Floating particles animation
-    val particles = remember { 
-        List(16) { 
-            mutableStateOf(
-                ParticleData(
-                    xPos = Random.nextFloat() * 400 - 20,
-                    yPos = Random.nextFloat() * 800 - 20, 
-                    particleSize = Random.nextFloat() * 5 + 3,
-                    alphaValue = Random.nextFloat() * 0.15f + 0.05f,
-                    xSpeed = Random.nextFloat() * 1f - 0.5f,
-                    ySpeed = Random.nextFloat() * 0.4f - 0.2f
+    val particles = rememberParticles(16)
+
+    // Function to reset the game
+    fun resetGame() {
+        viewModel.resetGame()
+        onPlayAgain()
+    }
+    
+    // Check for game end - show dialog after a short delay
+    LaunchedEffect(key1 = gameWinner) {
+        if (gameWinner.isNotEmpty()) {
+            delay(1200) // Delay showing the dialog to let player see the winning line
+            
+            // Trigger dialog scale animation
+            dialogScale.snapTo(0.8f)
+            dialogScale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessLow
                 )
             )
         }
@@ -108,31 +125,7 @@ fun GameBoardScreen(
         coroutineScope.launch {
             while(true) {
                 particles.forEach { state -> 
-                    val particle = state.value
-                    // Move particle and check if out of bounds
-                    val newX = particle.xPos + particle.xSpeed
-                    val newY = particle.yPos + particle.ySpeed
-                    
-                    // If particle goes out of bounds, reset it
-                    state.value = if (newX < -50 || newX > 500 || newY < -50 || newY > 1000) {
-                        ParticleData(
-                            xPos = Random.nextFloat() * 400 - 20,
-                            yPos = Random.nextFloat() * 800 - 20, 
-                            particleSize = Random.nextFloat() * 5 + 3,
-                            alphaValue = Random.nextFloat() * 0.15f + 0.05f,
-                            xSpeed = Random.nextFloat() * 1f - 0.5f,
-                            ySpeed = Random.nextFloat() * 0.4f - 0.2f
-                        )
-                    } else {
-                        ParticleData(
-                            xPos = newX,
-                            yPos = newY,
-                            particleSize = particle.particleSize,
-                            alphaValue = particle.alphaValue,
-                            xSpeed = particle.xSpeed,
-                            ySpeed = particle.ySpeed
-                        )
-                    }
+                    state.value = updateParticle(state.value)
                 }
                 delay(50)
             }
@@ -143,72 +136,16 @@ fun GameBoardScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF19104B),
-                        Color(0xFF25175B),
-                        Color(0xFF2F1F65)
-                    )
-                )
+                brush = AppColors.MainGradient
             )
     ) {
+        // Glowing background effect
+        GlowingBackgroundEffect(modifier = Modifier.fillMaxSize())
+        
         // Animated particles in background
         particles.forEach { state ->
-            val particle = state.value
-            Box(
-                modifier = Modifier
-                    .size(particle.particleSize.dp)
-                    .alpha(particle.alphaValue)
-                    .offset(x = particle.xPos.dp, y = particle.yPos.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFFFD600).copy(alpha = 0.6f),
-                                Color(0xFF4EE6FA).copy(alpha = 0.2f)
-                            )
-                        ),
-                        shape = CircleShape
-                    )
-            )
+            ParticleEffect(particle = state.value)
         }
-        
-        // Circle decor top left
-        Box(
-            modifier = Modifier
-                .size(200.dp)
-                .alpha(0.12f)
-                .offset(x = (-70).dp, y = (-70).dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.6f),
-                            Color.White.copy(alpha = 0.2f)
-                        )
-                    ),
-                    shape = CircleShape
-                )
-                .blur(20.dp)
-                .align(Alignment.TopStart)
-        )
-        
-        // Circle decor bottom right
-        Box(
-            modifier = Modifier
-                .size(240.dp)
-                .alpha(0.10f)
-                .offset(x = 100.dp, y = 100.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.6f),
-                            Color.White.copy(alpha = 0.2f)
-                        )
-                    ),
-                    shape = CircleShape
-                )
-                .blur(20.dp)
-                .align(Alignment.BottomEnd)
-        )
         
         Column(
             modifier = Modifier
@@ -216,190 +153,197 @@ fun GameBoardScreen(
                 .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             
-            // Title with animation
-            Box(
+            // Header with Back button
+            AppHeader(
+                title = if (isVsBot) "Play vs Bot" else "Play vs Player",
+                onBackClick = onBackClick
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // Current player indicator
+            GlassCard(
                 modifier = Modifier
-                    .offset(y = titleOffsetY.value.dp)
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
             ) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD600),
-                    textAlign = TextAlign.Center,
+                Row(
                     modifier = Modifier
-                        .drawBehind {
-                            drawTitleGlow(Color(0xFFFFD600).copy(alpha = 0.4f))
-                        }
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Turn status
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(700)) + 
-                        expandVertically(animationSpec = tween(700, easing = EaseOutBack)),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Card(
-                    modifier = Modifier.padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = 8.dp,
-                    backgroundColor = Color(0xFF3B256A)
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .padding(horizontal = 36.dp, vertical = 10.dp)
-                    ) {
-                        AnimatedContent(
-                            targetState = when {
-                                gameWinner.isEmpty() -> "Your Turn"
-                                gameWinner == "Draw" -> "Game Draw"
-                                else -> "Winner: $gameWinner"
-                            },
-                            transitionSpec = {
-                                slideInVertically() + fadeIn() togetherWith slideOutVertically() + fadeOut()
+                    // Current player
+                    Column {
+                        Text(
+                            text = "Current Turn",
+                            color = AppColors.OnSurface.copy(alpha = 0.7f),
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = currentTurn,
+                            color = AppColors.OnSurface,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    
+                    // Bot thinking indicator
+                    if (isVsBot && isBotThinking) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            PulseEffect(
+                                pulseFraction = 1.2f,
+                                durationMillis = 800
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SmartToy,
+                                    contentDescription = "Bot Thinking",
+                                    tint = AppColors.AccentYellow,
+                                    modifier = Modifier.size(24.dp)
+                                )
                             }
-                        ) { targetText ->
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = targetText,
-                                fontSize = 18.sp,
-                                color = Color(0xFF4EE6FA),
-                                textAlign = TextAlign.Center,
-                                fontWeight = FontWeight.SemiBold
+                                text = "Thinking...",
+                                color = AppColors.AccentYellow,
+                                fontSize = 16.sp
                             )
                         }
                     }
                 }
             }
             
-            Spacer(modifier = Modifier.height(18.dp))
+            Spacer(modifier = Modifier.height(24.dp))
             
-            // Players Row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
+            // Game board
+            Box(
+                modifier = Modifier
+                    .aspectRatio(1f)
+                    .scale(boardScale.value)
             ) {
-                // Player X
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
+                GameBoard(
+                    board = gameBoard,
+                    winningLine = winningCells,
+                    onCellClick = { row, col ->
+                        if (gameWinner.isEmpty() && !isBotThinking) {
+                            viewModel.makeMove(row, col, isVsBot)
+                        }
+                    }
+                )
+            }
+                    
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Stats row
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    PlayerSymbolBox(
-                        symbol = "X", 
-                        isActive = currentTurn == "X" && gameWinner.isEmpty(),
-                        symbolColor = Color(0xFFFFD600),
-                        borderColor = Color(0xFFFFD600)
+                    StatItem(
+                        value = wins.toString(),
+                        label = "Wins",
+                        icon = Icons.Default.EmojiEvents,
+                        color = AppColors.Success
                     )
                     
-                    Spacer(modifier = Modifier.height(6.dp))
-                    
-                    Text(
-                        text = "You",
-                        color = Color(0xFFB0A9D1),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                
-                // Player O
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    PlayerSymbolBox(
-                        symbol = "O", 
-                        isActive = currentTurn == "O" && gameWinner.isEmpty(),
-                        symbolColor = Color(0xFF4EE6FA),
-                        borderColor = Color(0xFF4EE6FA)
+                    StatItem(
+                        value = draws.toString(),
+                        label = "Draws",
+                        icon = Icons.Default.Balance,
+                        color = AppColors.Warning
                     )
                     
-                    Spacer(modifier = Modifier.height(6.dp))
+                    StatItem(
+                        value = losses.toString(),
+                        label = "Losses",
+                        icon = Icons.Default.Close,
+                        color = AppColors.Error
+                    )
                     
-                    Text(
-                        text = "Opponent",
-                        color = Color(0xFFB0A9D1),
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium
+                    StatItem(
+                        value = "${(winRate * 100).toInt()}%",
+                        label = "Win Rate",
+                        icon = Icons.AutoMirrored.Filled.ShowChart,
+                        color = AppColors.Info
                     )
                 }
             }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Game Board
-            Card(
+        }
+        
+        // Game end dialog
+        AnimatedVisibility(
+            visible = showGameEndDialog,
+            enter = scaleIn(animationSpec = tween(300)) + fadeIn(animationSpec = tween(300)),
+            exit = scaleOut(animationSpec = tween(300)) + fadeOut(animationSpec = tween(300))
+        ) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(1f)
-                    .weight(1f, fill = false)
-                    .shadow(
-                        elevation = 16.dp,
-                        shape = RoundedCornerShape(32.dp),
-                        spotColor = Color(0xFF6A4FC6)
-                    )
-                    .scale(boardScale.value),
-                shape = RoundedCornerShape(32.dp),
-                elevation = 0.dp,
-                backgroundColor = Color(0xFF3F2C77)
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .clickable(enabled = false, onClick = {}),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
+                GlassCard(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(12.dp)
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF4E3A8C),
-                                    Color(0xFF3F2C77)
-                                ),
-                                center = Offset(0.5f, 0.5f),
-                                radius = 1000f
-                            )
-                        )
+                        .padding(32.dp)
+                        .scale(dialogScale.value)
                 ) {
-                    // Game grid
                     Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceEvenly
+                        modifier = Modifier
+                            .padding(24.dp)
+                            .width(IntrinsicSize.Min),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        for (row in 0..2) {
-                            Row(
-                                modifier = Modifier.weight(1f),
-                                horizontalArrangement = Arrangement.SpaceEvenly
-                            ) {
-                                for (col in 0..2) {
-                                    GameCell(
-                                        value = gameBoard[row][col],
-                                        onClick = {
-                                            if (gameBoard[row][col].isEmpty() && gameWinner.isEmpty()) {
-                                                val newBoard = gameBoard.map { it.clone() }.toTypedArray()
-                                                newBoard[row][col] = currentTurn
-                                                gameBoard = newBoard
-                                                
-                                                // Check for winner
-                                                val winner = checkWinner(newBoard)
-                                                if (winner.isNotEmpty()) {
-                                                    gameWinner = winner
-                                                    // Update stats (in a real app, this would be persisted)
-                                                    when (winner) {
-                                                        "X" -> wins++
-                                                        "O" -> losses++
-                                                        "Draw" -> draws++
-                                                    }
-                                                    val totalGames = wins + losses + draws
-                                                    if (totalGames > 0) {
-                                                        winRate = (wins * 100) / totalGames
-                                                    }
+                        Text(
+                            text = when {
+                                gameWinner == "X" || gameWinner == "O" -> "Winner!"
+                                gameWinner == "Draw" -> "It\'s a Draw!"
+                                else -> ""
+                            },
+                            color = when {
+                                gameWinner == "X" || gameWinner == "O" -> AppColors.AccentYellow
+                                else -> AppColors.OnSurface
+                            },
+                            fontSize = 28.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        if (gameWinner == "X" || gameWinner == "O") {
+                            Text(
+                                text = gameWinner,
+                                color = if (gameWinner == "X") AppColors.AccentPink else AppColors.AccentPurple,
+                                fontSize = 64.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                                                 } else {
-                                                    // Switch turn
-                                                    currentTurn = if (currentTurn == "X") "O" else "X"
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f)
+                            Icon(
+                                imageVector = Icons.Default.Balance,
+                                contentDescription = null,
+                                tint = AppColors.Warning,
+                                modifier = Modifier.size(64.dp)
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        GradientButton(
+                            text = "Play Again",
+                            onClick = { resetGame() },
+                            modifier = Modifier.width(200.dp)
                                     )
                                 }
                             }
@@ -408,131 +352,93 @@ fun GameBoardScreen(
                 }
             }
             
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Buttons Row
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // Back Button
-                ModernButton(
-                    text = "Back",
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    backgroundColor = Color(0xFF4B357A),
-                    contentColor = Color.White,
-                    onClick = onBackClick
+// Helper function to create and remember particle states
+@Composable
+private fun rememberParticles(count: Int): List<MutableState<ParticleData>> {
+    return remember {
+        List(count) {
+            mutableStateOf(
+                ParticleData(
+                    x = (Math.random() * 1000).toFloat(),
+                    y = (Math.random() * 2000).toFloat(),
+                    radius = (5 + Math.random() * 15).toFloat(),
+                    alpha = (0.1f + Math.random() * 0.2f).toFloat(),
+                    speed = (0.5 + Math.random() * 2).toFloat()
                 )
-                
-                // Play Again Button
-                ModernButton(
-                    text = "Play Again",
-                    icon = Icons.Filled.Refresh,
-                    backgroundColor = Color(0xFFFFD600),
-                    contentColor = Color(0xFF2D1863),
-                    onClick = {
-                        coroutineScope.launch {
-                            // Add bounce animation on reset
-                            boardScale.animateTo(
-                                targetValue = 0.9f,
-                                animationSpec = tween(300, easing = EaseInOutQuad)
-                            )
-                            boardScale.animateTo(
-                                targetValue = 1f,
-                                animationSpec = spring(
-                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                    stiffness = Spring.StiffnessLow
-                                )
-                            )
+            )
+        }
+    }
+}
+
+// Data class for particle animation
+private data class ParticleData(
+    val x: Float,
+    val y: Float,
+    val radius: Float,
+    val alpha: Float,
+    val speed: Float
+)
+
+// Update particle position
+private fun updateParticle(particle: ParticleData): ParticleData {
+    val newY = if (particle.y > 0) {
+        particle.y - particle.speed
+    } else {
+        2000f
+    }
+    
+    return particle.copy(y = newY)
                         }
                         
-                        // Reset game state
-                        gameBoard = Array(3) { Array(3) { "" } }
-                        currentTurn = "X"
-                        gameWinner = ""
-                        onPlayAgain()
-                    }
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Game Stats Section
-            AnimatedVisibility(
-                visible = true,
-                enter = fadeIn(animationSpec = tween(1000)) + 
-                        expandVertically(animationSpec = tween(800, easing = EaseOutBack))
-            ) {
-                Card(
-                    shape = RoundedCornerShape(24.dp),
-                    elevation = 12.dp,
-                    backgroundColor = Color(0xFF3B256A),
+// Particle effect composable
+@Composable
+private fun ParticleEffect(particle: ParticleData) {
+    Box(
+        modifier = Modifier
+            .offset(x = particle.x.dp, y = particle.y.dp)
+            .size(particle.radius.dp)
+            .alpha(particle.alpha)
+            .background(
+                color = AppColors.AccentYellow.copy(alpha = 0.6f),
+                shape = CircleShape
+            )
+    )
+}
+
+// Game board composable
+@Composable
+private fun GameBoard(
+    board: Array<Array<String>>,
+    winningLine: List<Pair<Int, Int>>,
+    onCellClick: (Int, Int) -> Unit
+) {
+    GlassCard(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .padding(8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp)
+        ) {
+            for (i in 0..2) {
+                Row(
                     modifier = Modifier
+                        .weight(1f)
                         .fillMaxWidth()
-                        .padding(bottom = 16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 16.dp, horizontal = 20.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.BarChart, 
-                                contentDescription = null,
-                                tint = Color(0xFFB0A9D1),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Game Stats",
-                                color = Color(0xFFB0A9D1),
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(bottom = 2.dp)
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            // Wins
-                            StatCard(
-                                title = "Wins",
-                                value = wins.toString(),
-                                valueColor = Color(0xFFFFD600),
-                                icon = Icons.Filled.EmojiEvents
-                            )
-                            
-                            // Draws
-                            StatCard(
-                                title = "Draws",
-                                value = draws.toString(),
-                                valueColor = Color.White,
-                                icon = Icons.Default.Balance
-                            )
-                            
-                            // Losses
-                            StatCard(
-                                title = "Losses",
-                                value = losses.toString(),
-                                valueColor = Color(0xFF4EE6FA),
-                                icon = Icons.Filled.Close
-                            )
-                            
-                            // Win Rate
-                            StatCard(
-                                title = "Win Rate",
-                                value = "$winRate%",
-                                valueColor = Color(0xFFFFD600),
-                                icon = Icons.AutoMirrored.Filled.ShowChart
-                            )
-                        }
+                    for (j in 0..2) {
+                        val isWinningCell = winningLine.contains(Pair(i, j))
+                        GameCell(
+                            value = board[i][j],
+                            isWinningCell = isWinningCell,
+                            onClick = { onCellClick(i, j) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxHeight()
+                                .padding(6.dp)
+                        )
                     }
                 }
             }
@@ -540,29 +446,118 @@ fun GameBoardScreen(
     }
 }
 
+// Game cell composable
 @Composable
-fun StatCard(
-    title: String,
+private fun GameCell(
     value: String,
-    valueColor: Color,
-    icon: ImageVector
+    isWinningCell: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val cellBackground = if (isWinningCell) {
+        Brush.radialGradient(
+            colors = listOf(
+                AppColors.AccentYellow.copy(alpha = 0.3f),
+                AppColors.AccentYellow.copy(alpha = 0.1f)
+            )
+        )
+    } else {
+        Brush.radialGradient(
+            colors = listOf(
+                AppColors.SurfaceLight.copy(alpha = 0.7f),
+                AppColors.Surface.copy(alpha = 0.4f)
+                            )
+        )
+    }
+    
+    val cellBorder = if (isWinningCell) {
+        BorderStroke(
+            width = 2.dp,
+            brush = Brush.linearGradient(
+                colors = listOf(
+                    AppColors.AccentYellow,
+                    AppColors.AccentPink
+                )
+            )
+        )
+    } else {
+        BorderStroke(
+            width = 1.dp,
+            color = AppColors.CardBorder
+                            )
+                        }
+                        
+    Card(
+        modifier = modifier
+            .shadow(
+                elevation = if (isWinningCell) 8.dp else 4.dp,
+                shape = RoundedCornerShape(16.dp),
+                spotColor = if (isWinningCell) AppColors.AccentYellow.copy(alpha = 0.5f) else AppColors.AccentPurple.copy(alpha = 0.3f)
+            )
+            .clickable(enabled = value.isEmpty()) { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        border = cellBorder,
+        backgroundColor = Color.Transparent,
+        elevation = 0.dp
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(cellBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            when (value) {
+                "X" -> {
+                    Text(
+                        text = "X",
+                        color = if (isWinningCell) AppColors.AccentYellow else AppColors.AccentPink,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                "O" -> {
+                    Text(
+                        text = "O",
+                        color = if (isWinningCell) AppColors.AccentYellow else AppColors.AccentPurple,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Stat item composable
+@Composable
+private fun StatItem(
+    value: String,
+    label: String,
+    icon: ImageVector,
+    color: Color
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF4E3A8C))
-                .padding(6.dp),
+                .size(40.dp)
+                .shadow(
+                    elevation = 4.dp,
+                    shape = CircleShape,
+                    spotColor = color.copy(alpha = 0.3f)
+                )
+                .background(
+                    color = AppColors.SurfaceLight,
+                    shape = CircleShape
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = valueColor,
-                modifier = Modifier.size(16.dp)
+                tint = color,
+                modifier = Modifier.size(20.dp)
             )
         }
         
@@ -570,271 +565,27 @@ fun StatCard(
         
         Text(
             text = value,
-            color = valueColor,
-            fontSize = 22.sp,
+            color = AppColors.OnSurface,
+            fontSize = 16.sp,
             fontWeight = FontWeight.Bold
         )
         
         Text(
-            text = title,
-            color = Color(0xFFB0A9D1),
+            text = label,
+            color = AppColors.OnSurface.copy(alpha = 0.7f),
             fontSize = 12.sp
         )
     }
 }
 
-@Composable
-fun ModernButton(
-    text: String,
-    icon: ImageVector,
-    backgroundColor: Color,
-    contentColor: Color,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val buttonScale = remember { mutableFloatStateOf(1f) }
-    val scope = rememberCoroutineScope()
-    
-    Box(
-        modifier = Modifier
-            .shadow(
-                elevation = 8.dp,
-                shape = RoundedCornerShape(16.dp),
-                spotColor = backgroundColor.copy(alpha = 0.5f)
-            )
-            .clip(RoundedCornerShape(16.dp))
-            .background(backgroundColor)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = rememberRipple(color = contentColor.copy(alpha = 0.1f)),
-                onClick = {
-                    scope.launch {
-                        buttonScale.floatValue = 0.95f
-                        delay(100)
-                        buttonScale.floatValue = 1f
-                        onClick()
-                    }
-                }
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp)
-            .scale(buttonScale.floatValue),
-        contentAlignment = Alignment.Center
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                icon,
-                contentDescription = text,
-                tint = contentColor
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = text,
-                color = contentColor,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold
-            )
-        }
-    }
-}
-
-@Composable
-fun PlayerSymbolBox(
-    symbol: String,
-    isActive: Boolean,
-    symbolColor: Color,
-    borderColor: Color
-) {
-    val pulseAnim = rememberInfiniteTransition(label = "pulse")
-    val scale = if (isActive) {
-        pulseAnim.animateFloat(
-            initialValue = 1f,
-            targetValue = 1.1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(800, easing = EaseInOutQuad),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "scale"
-        ).value
-    } else 1f
-    
-    val shadowAlpha = if (isActive) {
-        pulseAnim.animateFloat(
-            initialValue = 0.4f,
-            targetValue = 0.7f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(800, easing = EaseInOutQuad),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "shadowAlpha"
-        ).value
-    } else 0.2f
-    
-    Box(
-        modifier = Modifier
-            .size(68.dp)
-            .shadow(
-                elevation = if (isActive) 12.dp else 4.dp,
-                shape = RoundedCornerShape(14.dp),
-                spotColor = symbolColor.copy(alpha = shadowAlpha)
-            )
-            .scale(scale)
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF4B357A),
-                        Color(0xFF3F2C77)
-                    )
-                )
-            )
-            .border(
-                width = if (isActive) 2.5.dp else 0.dp,
-                color = if (isActive) borderColor else Color.Transparent,
-                shape = RoundedCornerShape(14.dp)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = symbol,
-            fontSize = 36.sp,
-            fontWeight = FontWeight.Bold,
-            color = symbolColor
-        )
-    }
-}
-
-@Composable
-fun GameCell(
-    value: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    
-    // Cell appears
-    val animatedAlpha = remember { Animatable(0f) }
-    val animatedScale = remember { Animatable(0.8f) }
-    
-    LaunchedEffect(key1 = value) {
-        if (value.isNotEmpty()) {
-            launch {
-                animatedAlpha.animateTo(
-                    targetValue = 1f,
-                    animationSpec = tween(300)
-                )
-            }
-            launch {
-                animatedScale.animateTo(
-                    targetValue = 1f,
-                    animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioMediumBouncy,
-                        stiffness = Spring.StiffnessLow
-                    )
-                )
-            }
-        } else {
-            animatedAlpha.snapTo(0f)
-            animatedScale.snapTo(0.8f)
-        }
-    }
-    
-    Box(
-        modifier = modifier
-            .padding(4.dp)
-            .aspectRatio(1f)
-            .shadow(
-                elevation = 8.dp,
-                shape = RoundedCornerShape(18.dp),
-                spotColor = Color(0xFF6A4FC6).copy(alpha = 0.7f)
-            )
-            .clip(RoundedCornerShape(18.dp))
-            .background(
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF563FAF),
-                        Color(0xFF4E3A8C)
-                    )
-                )
-            )
-            .border(
-                width = 2.dp, 
-                color = Color(0xFF6A4FC6),
-                shape = RoundedCornerShape(18.dp)
-            )
-            .clickable(
-                enabled = value.isEmpty(),
-                interactionSource = interactionSource,
-                indication = rememberRipple(color = Color.White.copy(alpha = 0.3f)),
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (value.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .alpha(animatedAlpha.value)
-                    .scale(animatedScale.value)
-            ) {
-                Text(
-                    text = value,
-                    fontSize = 44.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (value == "X") Color(0xFFFFD600) else Color(0xFF4EE6FA)
-                )
-            }
-        }
-    }
-}
-
-fun DrawScope.drawTitleGlow(color: Color) {
-    drawCircle(
-        color = color,
-        radius = 100f,
-        center = Offset(size.width / 2, size.height / 2),
-        style = Stroke(width = 50f)
-    )
-}
-
-fun checkWinner(board: Array<Array<String>>): String {
-    // Check rows
-    for (i in 0..2) {
-        if (board[i][0].isNotEmpty() && board[i][0] == board[i][1] && board[i][1] == board[i][2]) {
-            return board[i][0]
-        }
-    }
-    
-    // Check columns
-    for (i in 0..2) {
-        if (board[0][i].isNotEmpty() && board[0][i] == board[1][i] && board[1][i] == board[2][i]) {
-            return board[0][i]
-        }
-    }
-    
-    // Check diagonals
-    if (board[0][0].isNotEmpty() && board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
-        return board[0][0]
-    }
-    
-    if (board[0][2].isNotEmpty() && board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
-        return board[0][2]
-    }
-    
-    // Check for draw
-    for (i in 0..2) {
-        for (j in 0..2) {
-            if (board[i][j].isEmpty()) {
-                return "" // Game still ongoing
-            }
-        }
-    }
-    
-    return "Draw" // All cells filled and no winner
-}
-
 @Preview(showBackground = true)
 @Composable
 fun GameBoardScreenPreview() {
-    GameBoardScreen()
+    // Create a preview version of the ViewModel
+    val previewViewModel = remember { GameViewModel() }
+    
+    GameBoardScreen(
+        viewModel = previewViewModel,
+        isVsBot = true
+    )
 } 
