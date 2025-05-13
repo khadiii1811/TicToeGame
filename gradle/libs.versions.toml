@@ -16,6 +16,8 @@ compose-runtime = { group = "androidx.compose.runtime", name = "runtime", versio
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation", version = "1.6.7" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version = "1.6.7" }
 compose-activity = { group = "androidx.activity", name = "activity-compose", version = "1.8.2" }
+room = "2.7.1"
+ksp = "1.9.22-1.0.16"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,8 +36,12 @@ compose-foundation = { group = "androidx.compose.foundation", name = "foundation
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version = "1.6.7" }
 compose-activity = { group = "androidx.activity", name = "activity-compose", version = "1.8.2" }
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version = "1.6.7" }
+androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+ksp-plug = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 
