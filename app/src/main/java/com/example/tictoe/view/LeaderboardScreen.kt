@@ -40,468 +40,64 @@ data class LeaderboardPlayer(
 )
 
 @Composable
-fun LeaderboardScreen(onBack: () -> Unit) {
-    // State for tab selection (Global or Friends)
-    var selectedTab by remember { mutableStateOf(0) }
-    var searchQuery by remember { mutableStateOf("") }
-
-    // Sample data for the leaderboard
-    val players = remember {
-        listOf(
-            LeaderboardPlayer(1, "Player1", 'P', 2400, Color(0xFFFFD700), "🏆"), // Gold
-            LeaderboardPlayer(2, "GameMaster", 'G', 2150, Color(0xFFC0C0C0), "🥈"), // Silver
-            LeaderboardPlayer(3, "TicTacPro", 'T', 1850, Color(0xFFCD7F32), "🥉"), // Bronze
-            LeaderboardPlayer(4, "XOChamp", 'X', 1720, Color(0xFF9370DB), "🔥"),
-            LeaderboardPlayer(5, "GridKing", 'G', 1650, Color(0xFF20B2AA), "⭐"),
-            LeaderboardPlayer(6, "MoveExpert", 'M', 1580, Color(0xFF6495ED)),
-            LeaderboardPlayer(7, "TicMaster", 'T', 1490, Color(0xFFFF6347)),
-            LeaderboardPlayer(8, "Player8", 'P', 1350, Color(0xFF4169E1)),
-            LeaderboardPlayer(9, "GameWizard", 'G', 1220, Color(0xFF32CD32)),
-            LeaderboardPlayer(10, "BoardMaster", 'B', 1150, Color(0xFFFF69B4))
-        )
-    }
+fun LeaderboardScreen(
+    onBack: () -> Unit = {}
+) {
+    // Màn hình này đơn giản nên không cần ViewModel riêng
     
-    // Current user's rank
-    val currentUserRank = 8
-    val currentUserPoints = 1350
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(
                 brush = Brush.verticalGradient(
                     colors = listOf(
-                        Color(0xFF1E124D),
-                        Color(0xFF2D1863),
-                        Color(0xFF3A256A)
+                        Color(0xFF19104B),
+                        Color(0xFF25175B),
+                        Color(0xFF2F1F65)
                     )
                 )
             )
     ) {
-        // Background decoration - top left
-        Box(
-            modifier = Modifier
-                .size(180.dp)
-                .alpha(0.12f)
-                .offset(x = (-60).dp, y = (-60).dp)
-                .background(Color.White.copy(alpha = 0.3f), CircleShape)
-                .align(Alignment.TopStart)
-        )
-        
-        // Background decoration - bottom right
-        Box(
-            modifier = Modifier
-                .size(220.dp)
-                .alpha(0.10f)
-                .offset(x = 80.dp, y = 80.dp)
-                .background(Color.White.copy(alpha = 0.3f), CircleShape)
-                .align(Alignment.BottomEnd)
-        )
-        
+        // Header with back button
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp)
+                .padding(horizontal = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = onBack,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .shadow(8.dp, CircleShape)
-                            .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF4E3A8C),
-                                        Color(0xFF7B6FC6)
-                                    )
-                                ),
-                                shape = CircleShape
-                            )
-                    ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(12.dp))
-                    
-                    Text(
-                        text = "Tic Tac Toe",
-                        color = Color(0xFFFFD600),
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.Bold,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = Shadow(
-                                color = Color(0xFF000000).copy(alpha = 0.25f),
-                                offset = Offset(2f, 2f),
-                                blurRadius = 4f
-                            )
-                        )
-                    )
-                }
-                
-                Card(
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = 4.dp,
-                    backgroundColor = Color(0xFF4E3A8C).copy(alpha = 0.8f),
-                    modifier = Modifier.shadow(8.dp, RoundedCornerShape(16.dp))
-                ) {
-                    Text(
-                        text = "Leaderboard",
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Tabs
-            Card(
-                shape = RoundedCornerShape(30.dp),
-                elevation = 8.dp,
-                backgroundColor = Color(0xFF2F1F65),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .padding(4.dp)
-                ) {
-                    val tabs = listOf("Global", "Friends")
-                    tabs.forEachIndexed { index, title ->
-                        val isSelected = selectedTab == index
-                        val tabWidth by animateDpAsState(
-                            targetValue = if (isSelected) 8.dp else 0.dp,
-                            animationSpec = tween(300)
-                        )
-                        
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxHeight()
-                                .padding(4.dp)
-                                .clip(RoundedCornerShape(25.dp))
-                                .background(
-                                    brush = if (isSelected) {
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                Color(0xFF4EE6FA),
-                                                Color(0xFF4EE6FA).copy(alpha = 0.7f)
-                                            )
-                                        )
-                                    } else {
-                                        Brush.horizontalGradient(
-                                            colors = listOf(
-                                                Color(0xFF4E3A8C).copy(alpha = 0.5f),
-                                                Color(0xFF4E3A8C).copy(alpha = 0.5f)
-                                            )
-                                        )
-                                    }
-                                )
-                                .border(
-                                    width = tabWidth,
-                                    brush = Brush.horizontalGradient(
-                                        colors = listOf(
-                                            Color(0xFFFFFFFF).copy(alpha = 0.8f),
-                                            Color(0xFFFFFFFF).copy(alpha = 0.2f)
-                                        )
-                                    ),
-                                    shape = RoundedCornerShape(25.dp)
-                                )
-                                .clickable { selectedTab = index },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = title,
-                                color = if (isSelected) Color(0xFF2F1F65) else Color.White,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                fontSize = 16.sp
-                            )
-                        }
-                    }
-                }
-            }
-            
             Spacer(modifier = Modifier.height(16.dp))
             
-            // Search bar
-            Card(
-                shape = RoundedCornerShape(30.dp),
-                elevation = 8.dp,
-                backgroundColor = Color(0xFF2F1F65).copy(alpha = 0.7f),
+            Box(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                // Back button
+                IconButton(
+                    onClick = onBack,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .padding(horizontal = 16.dp)
+                        .size(48.dp)
+                        .background(
+                            color = Color(0xFF3D2C6D),
+                            shape = RoundedCornerShape(percent = 50)
+                        )
+                        .align(Alignment.CenterStart)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = Color(0xFF4EE6FA),
-                        modifier = Modifier.size(24.dp)
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
                     )
-                    
-                    Spacer(modifier = Modifier.width(12.dp))
-                    
-                    BasicTextField(
-                        value = searchQuery,
-                        onValueChange = { searchQuery = it },
-                        textStyle = TextStyle(
-                            color = Color.White,
-                            fontSize = 16.sp
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(vertical = 8.dp),
-                        decorationBox = { innerTextField ->
-                            Box {
-                                if (searchQuery.isEmpty()) {
-                                    Text(
-                                        text = "Search players...",
-                                        color = Color.White.copy(alpha = 0.5f),
-                                        fontSize = 16.sp
-                                    )
-                                }
-                                innerTextField()
-                            }
-                        }
-                    )
-                    
-                    AnimatedVisibility(
-                        visible = searchQuery.isNotEmpty(),
-                        enter = fadeIn() + scaleIn(),
-                        exit = fadeOut() + scaleOut()
-                    ) {
-                        IconButton(
-                            onClick = { searchQuery = "" },
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear",
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
                 }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Title for the leaderboard section
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.EmojiEvents,
-                    contentDescription = null,
-                    tint = Color(0xFFFFD700),
-                    modifier = Modifier.size(24.dp)
-                )
-                
-                Spacer(modifier = Modifier.width(8.dp))
                 
                 Text(
-                    text = "TOP PLAYERS",
-                    color = Color(0xFF4EE6FA),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "Leaderboard",
+                    color = Color.White,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.Center)
                 )
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                Text(
-                    text = "POINTS",
-                    color = Color(0xFF4EE6FA),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                
-                Spacer(modifier = Modifier.width(16.dp))
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Leaderboard entries
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                elevation = 8.dp,
-                backgroundColor = Color(0xFF332058).copy(alpha = 0.8f),
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    itemsIndexed(players.take(10)) { index, player ->
-                        LeaderboardItem(
-                            rank = index + 1,
-                            player = player,
-                            isCurrentUser = player.id == 8  // Assuming Player8 is the current user
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Bottom bar with current user's rank
-            Card(
-                shape = RoundedCornerShape(50.dp),
-                backgroundColor = Color(0xFF2F1F65),
-                elevation = 8.dp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .shadow(
-                        elevation = 12.dp,
-                        shape = RoundedCornerShape(50.dp),
-                        spotColor = Color(0xFF4EE6FA).copy(alpha = 0.2f)
-                    )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight()
-                        .padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        Color(0xFF4E3A8C),
-                                        Color(0xFF4169E1)
-                                    )
-                                ),
-                                shape = CircleShape
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "P",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(16.dp))
-                    
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "YOUR RANK",
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            
-                            Spacer(modifier = Modifier.width(4.dp))
-                            
-                            Card(
-                                shape = RoundedCornerShape(12.dp),
-                                backgroundColor = Color(0xFF4E3A8C),
-                                elevation = 0.dp,
-                                modifier = Modifier.height(18.dp)
-                            ) {
-                                Text(
-                                    text = "${currentUserRank}th",
-                                    color = Color(0xFF4EE6FA),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        
-                        Text(
-                            text = "Player8",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.weight(1f))
-                    
-                    // Points with glowing effect
-                    Box(
-                        modifier = Modifier
-                            .shadow(
-                                elevation = 8.dp,
-                                shape = RoundedCornerShape(20.dp),
-                                spotColor = Color(0xFF4EE6FA)
-                            )
-                            .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF4E3A8C),
-                                        Color(0xFF4169E1)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "$currentUserPoints",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            style = TextStyle(
-                                shadow = Shadow(
-                                    color = Color(0xFF4EE6FA).copy(alpha = 0.5f),
-                                    offset = Offset(0f, 0f),
-                                    blurRadius = 8f
-                                )
-                            )
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.width(4.dp))
-                    
-                    Text(
-                        text = "pts",
-                        color = Color(0xFF4EE6FA),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
+            // Rest of the leaderboard content
         }
     }
 }

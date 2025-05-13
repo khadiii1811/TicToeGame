@@ -55,11 +55,19 @@ dependencies {
     implementation("androidx.gridlayout:gridlayout:1.0.0")
     implementation(libs.compose.ui)
     implementation(libs.compose.material)
+    implementation("androidx.compose.material3:material3:1.2.0")
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.activity)
+
+    // WebSocket library
+    implementation("org.java-websocket:Java-WebSocket:1.5.3")
+
+    // Gson for JSON serialization/deserialization
+    implementation("com.google.code.gson:gson:2.10.1")
+
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

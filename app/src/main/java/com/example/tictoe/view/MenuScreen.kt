@@ -9,6 +9,10 @@ import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -26,6 +30,8 @@ import com.example.tictoe.R
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.tictoe.viewmodel.MenuViewModel
+import com.example.tictoe.viewmodel.SettingsViewModel
 
 @Composable
 fun MenuScreen(
@@ -33,8 +39,12 @@ fun MenuScreen(
     onVsBotClick: () -> Unit = {},
     onVsPlayerClick: () -> Unit = {},
     onLeaderboardClick: () -> Unit = {},
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    settingsViewModel: SettingsViewModel? = null
 ) {
+    // Get username from settings view model
+    val username by settingsViewModel?.username?.collectAsState() ?: remember { mutableStateOf("Player") }
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -138,7 +148,7 @@ fun MenuScreen(
                                     fontSize = 16.sp
                                 )
                                 Text(
-                                    text = "Player1",
+                                    text = username,
                                     color = Color.White,
                                     fontSize = 20.sp,
                                     fontWeight = FontWeight.Bold

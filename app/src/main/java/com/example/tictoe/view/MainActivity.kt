@@ -1,44 +1,231 @@
 package com.example.tictoe.view
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import com.example.tictoe.di.AppModule
+import com.example.tictoe.model.OnlineGameRepository
+import com.example.tictoe.model.SoundManager
+import com.example.tictoe.viewmodel.GameViewModel
+import com.example.tictoe.viewmodel.MenuViewModel
+import com.example.tictoe.viewmodel.SettingsViewModel
 
 class MainActivity : ComponentActivity() {
+    // ViewModels
+    private lateinit var menuViewModel: MenuViewModel
+    private lateinit var gameViewModel: GameViewModel
+    private lateinit var settingsViewModel: SettingsViewModel
+    
+    // Repositories
+    private lateinit var onlineGameRepository: OnlineGameRepository
+    
+    // SoundManager
+    private lateinit var soundManager: SoundManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Initialize SoundManager
+        soundManager = AppModule.provideSoundManager(applicationContext)
+        
+        // Initialize ViewModels
+        menuViewModel = AppModule.provideMenuViewModel(this)
+        gameViewModel = AppModule.provideGameViewModel(this)
+        settingsViewModel = AppModule.provideSettingsViewModel(this)
+        
+        // Initialize OnlineGameRepository
+        onlineGameRepository = AppModule.provideOnlineGameRepository(applicationContext)
+        
+        // Khởi tạo SettingsViewModel với Context
+        settingsViewModel.initialize(applicationContext)
+        
+        // Kết nối SoundManager với các ViewModel
+        gameViewModel.setSoundManager(soundManager)
+        menuViewModel.setSoundManager(soundManager)
+        
+        // Load game stats from repository
+        val statsRepository = AppModule.provideStatsRepository(applicationContext)
+        
+        // Load stats from repository
+        gameViewModel.loadStats(
+            wins = statsRepository.getWinRate(),
+            draws = 2,
+            losses = 0
+        )
+        
+        Log.d("TicToe", "MainActivity created")
+        
         setContent {
-            var currentScreen by remember { mutableStateOf("menu") }
-            var matchedPlayerName by remember { mutableStateOf("") }
+            // Get settings from ViewModel
+            val isSoundEnabled by settingsViewModel.isSoundEnabled.collectAsState()
+            val aiDifficulty by settingsViewModel.aiDifficulty.collectAsState()
+            val username by settingsViewModel.username.collectAsState()
             
-            when (currentScreen) {
-                "menu" -> MenuScreen(
-                    onSettingsClick = { currentScreen = "settings" },
-                    onLeaderboardClick = { currentScreen = "leaderboard" },
-                    onOnlineClick = { currentScreen = "online_matching" }
-                )
-                "settings" -> SettingsScreen(onBack = { currentScreen = "menu" })
-                "leaderboard" -> LeaderboardScreen(onBack = { currentScreen = "menu" })
-                "online_matching" -> OnlineMatchingScreen(
-                    onBack = { currentScreen = "menu" },
-                    onCancel = { currentScreen = "menu" },
-                    onMatchFound = { playerName ->
-                        matchedPlayerName = playerName
-                        currentScreen = "game" // You would transition to your game screen here
+            // Update SoundManager whenever sound settings change
+            LaunchedEffect(isSoundEnabled) {
+                soundManager.setSoundEnabled(isSoundEnabled)
+                Log.d("TicToe", "Sound setting updated: $isSoundEnabled")
+            }
+            
+            // Update AI difficulty in GameViewModel
+            LaunchedEffect(aiDifficulty) {
+                gameViewModel.setAiDifficulty(aiDifficulty)
+                Log.d("TicToe", "AI difficulty updated: $aiDifficulty")
+            }
+            
+            // Set username in MenuViewModel whenever it changes in settings
+            LaunchedEffect(username) {
+                menuViewModel.setPlayerName(username)
+                onlineGameRepository.setPlayerName(username)
+                Log.d("TicToe", "Username updated to: $username")
+            }
+            
+            MaterialTheme {
+                Surface(
+                    color = Color(0xFF19104B),
+                    contentColor = Color.White,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    // Collect current state from MenuViewModel
+                    val currentScreen by menuViewModel.currentScreen.collectAsState()
+                    val isVsBot by menuViewModel.isVsBot.collectAsState()
+                    val playerName by menuViewModel.playerName.collectAsState()
+                    
+                    // Phát âm thanh khi vào màn hình menu
+                    LaunchedEffect(currentScreen) {
+                        if (currentScreen == "menu") {
+                            soundManager.startMenuMusic()
+                            Log.d("TicToe", "Starting menu music when entering menu screen")
+                        } else {
+                            soundManager.stopMenuMusic()
+                        }
                     }
-                )
-                "game" -> {
-                    // Replace this with your actual game screen when ready
-                    // For now just go back to menu when clicked
-                    MenuScreen(onSettingsClick = { currentScreen = "menu" })
+                    
+                    Log.d("TicToe", "Current screen: $currentScreen, isVsBot: $isVsBot")
+            
+                    when (currentScreen) {
+                        "menu" -> MenuScreen(
+                            onSettingsClick = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToSettings() 
+                            },
+                            onLeaderboardClick = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToLeaderboard() 
+                            },
+                            onOnlineClick = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToAvailableRooms() 
+                            },
+                            onVsBotClick = {
+                                soundManager.playClickSound()
+                                Log.d("TicToe", "VS Bot button clicked, switching to game screen")
+                                menuViewModel.navigateToGameVsBot()
+                            },
+                            onVsPlayerClick = {
+                                soundManager.playClickSound()
+                                Log.d("TicToe", "VS Player button clicked, switching to game screen")
+                                menuViewModel.navigateToGameVsPlayer()
+                            },
+                            settingsViewModel = settingsViewModel
+                        )
+                        "settings" -> SettingsScreen(
+                            onBack = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToMenu() 
+                            },
+                            viewModel = settingsViewModel
+                        )
+                        "leaderboard" -> LeaderboardScreen(
+                            onBack = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToMenu() 
+                            }
+                        )
+                        "available_rooms" -> AvailableRoomsScreen(
+                            onBack = {
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToMenu()
+                            },
+                            onCreateRoom = {
+                                soundManager.playClickSound()
+                                // Sử dụng tên người dùng từ SettingsViewModel
+                                onlineGameRepository.hostGame(username)
+                                menuViewModel.navigateToOnlineMatching()
+                            },
+                            onJoinRoom = { serverIp ->
+                                soundManager.playClickSound()
+                                // Tham gia phòng với IP đã chọn
+                                onlineGameRepository.joinGame(username, serverIp)
+                                menuViewModel.navigateToOnlineMatching()
+                            },
+                            repository = onlineGameRepository
+                        )
+                        "online_matching" -> OnlineMatchingScreen(
+                            onBack = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToMenu() 
+                            },
+                            onCancel = { 
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToMenu() 
+                            },
+                            onMatchFound = { playerName ->
+                                soundManager.playClickSound()
+                                Log.d("TicToe", "Match found with player: $playerName")
+                                menuViewModel.onMatchFound(playerName)
+                            },
+                            viewModel = menuViewModel
+                        )
+                        "game" -> {
+                            Log.d("TicToe", "Displaying game screen with isVsBot=$isVsBot")
+                            GameBoardScreen(
+                                onBackClick = { 
+                                    soundManager.playClickSound()
+                                    Log.d("TicToe", "Back button clicked, returning to menu")
+                                    menuViewModel.navigateToMenu()
+                                },
+                                onPlayAgain = { 
+                                    soundManager.playClickSound()
+                                    Log.d("TicToe", "Play again button clicked")
+                                    gameViewModel.resetGame()
+                                },
+                                isVsBot = isVsBot,
+                                viewModel = gameViewModel
+                            )
+                        }
+                        else -> {
+                            // Fallback to menu if unknown screen
+                            Log.w("TicToe", "Unknown screen: $currentScreen, falling back to menu")
+                            menuViewModel.navigateToMenu()
+                        }
+                    }
                 }
             }
+        }
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up resources when Activity is destroyed
+        if (this::soundManager.isInitialized) {
+            soundManager.release()
+        }
+        
+        // Disconnect from any ongoing online game
+        if (this::onlineGameRepository.isInitialized) {
+            onlineGameRepository.disconnect()
         }
     }
 }
