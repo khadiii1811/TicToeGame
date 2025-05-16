@@ -64,6 +64,13 @@ dependencies {
 
     // WebSocket library
     implementation("org.java-websocket:Java-WebSocket:1.5.3")
+    
+    // Socket.IO client
+    implementation("io.socket:socket.io-client:2.1.0")
+    
+    // Socket.IO server (chỉ cho mục đích demo, có thể xóa trong bản release)
+    implementation("io.socket:socket.io-server:4.0.1")
+    implementation("io.socket:engine.io-server:6.0.1")
 
     // Gson for JSON serialization/deserialization
     implementation("com.google.code.gson:gson:2.10.1")
