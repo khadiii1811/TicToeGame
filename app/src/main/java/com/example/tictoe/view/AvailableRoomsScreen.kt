@@ -1,5 +1,6 @@
 package com.example.tictoe.view
 
+import android.util.Log
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -262,8 +263,10 @@ fun AvailableRoomsScreen(
                         RoomItem(
                             room = room,
                             onJoin = { 
+                                // Chỉ gửi tin nhắn JOIN_ROOM, không gọi lại joinGame
+                                // để tránh ngắt kết nối WebSocket
                                 repository?.joinRoom(room.id)
-                                onJoinRoom(room.hostName)
+                                onJoinRoom(room.hostName) // Vẫn truyền tên host để hiển thị
                             }
                         )
                     }
@@ -288,7 +291,12 @@ fun AvailableRoomsScreen(
                         ServerItem(
                             hostIp = host,
                             localIpAddress = localIpAddress,
-                            onJoin = { onJoinRoom(host) }
+                            onJoin = { 
+                                // Chỉ chuyển màn hình khi nhấn vào Server Item
+                                // KHÔNG gọi joinGame() để tránh việc đóng kết nối hiện tại
+                                Log.d("AvailableRoomsScreen", "Navigating to matching screen for host: $host")
+                                onJoinRoom(host)
+                            }
                         )
                     }
                 }

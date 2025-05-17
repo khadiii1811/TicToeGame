@@ -230,6 +230,14 @@ class OnlineGameRepository(
         // Đóng kết nối hiện tại nếu có
         cleanup()
         
+        // Kiểm tra địa chỉ IP hợp lệ - đảm bảo không phải là tên người dùng
+        val ipPattern = Regex("^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$")
+        if (!ipPattern.matches(serverIp)) {
+            Log.e(TAG, "Invalid IP address format: $serverIp. Using default IP.")
+            _connectionState.value = ConnectionState.Error("IP không hợp lệ: $serverIp")
+            return
+        }
+        
         // Ưu tiên IP thủ công nếu có
         val targetIp = if (!manualHostIp.isNullOrBlank() && serverIp == currentDeviceIp) {
             Log.d(TAG, "Overriding auto-detected IP with manual IP: $manualHostIp")
@@ -256,26 +264,84 @@ class OnlineGameRepository(
             if (wsClient == null || _connectionState.value !is ConnectionState.Connected) {
                 Log.d(TAG, "Chưa kết nối tới server. Thử tạo server mới...")
                 
-                // Nếu đã có IP thủ công, log để debug
-                if (!manualHostIp.isNullOrBlank()) {
-                    Log.d(TAG, "Using manual host IP for creating room: $manualHostIp")
-                }
+                // Kiểm tra nếu đang chạy trên máy ảo
+                val isEmulator = isRunningOnEmulator()
                 
-                hostGame(playerName)
+                // Đóng kết nối hiện tại nếu có
+                cleanup()
                 
-                // Đợi kết nối thành công (tối đa 5 giây)
-                var timeWaited = 0
-                val checkInterval = 250 // Giảm từ 500ms xuống 250ms
-                val maxWaitTime = 5000
-                
-                while (timeWaited < maxWaitTime) {
-                    if (_connectionState.value is ConnectionState.Connected) {
-                        Log.d(TAG, "Kết nối thành công sau $timeWaited ms")
-                        break
+                // Khởi động server mới (luôn cần thiết để tạo phòng)
+                try {
+                    // Tìm cổng trống
+                    try {
+                        val testSocket = ServerSocket(DEFAULT_SERVER_PORT)
+                        testSocket.close()
+                        SERVER_PORT = DEFAULT_SERVER_PORT
+                        Log.d(TAG, "Sử dụng cổng mặc định: $SERVER_PORT")
+                    } catch (e: Exception) {
+                        // Tìm cổng khác
+                        for (port in 8888..8900) {
+                            try {
+                                val testSocket = ServerSocket(port)
+                                testSocket.close()
+                                SERVER_PORT = port
+                                Log.d(TAG, "Sử dụng cổng thay thế: $SERVER_PORT")
+                                break
+                            } catch (e: Exception) {
+                                // Tiếp tục thử cổng khác
+                            }
+                        }
                     }
-                    delay(checkInterval.toLong())
-                    timeWaited += checkInterval
-                    Log.d(TAG, "Đang đợi kết nối, đã đợi $timeWaited ms")
+                    
+                    // Khởi động WebSocket server
+                    Log.d(TAG, "Khởi động WebSocket server trên cổng $SERVER_PORT")
+                    wsServer = TicTacToeServer(SERVER_PORT)
+                    wsServer?.start()
+                    
+                    // Đợi server khởi động
+                    delay(1000)
+                    
+                    // Kiểm tra xem server đã khởi động
+                    var serverStarted = checkServerRunning(SERVER_PORT)
+                    if (!serverStarted) {
+                        wsServer?.stop()
+                        delay(1000)
+                        wsServer = TicTacToeServer(SERVER_PORT)
+                        wsServer?.start()
+                        delay(1000)
+                        serverStarted = checkServerRunning(SERVER_PORT)
+                    }
+                    
+                    if (serverStarted) {
+                        Log.d(TAG, "Server đã khởi động thành công trên cổng $SERVER_PORT")
+                        
+                        // Kết nối đến server (luôn dùng 127.0.0.1 khi là host)
+                        _connectionState.value = ConnectionState.Hosting
+                        connectToServerSimple("127.0.0.1", SERVER_PORT)
+                        
+                        // Đợi kết nối đến server
+                        var timeWaited = 0
+                        val checkInterval = 250
+                        val maxWaitTime = 5000
+                        
+                        while (timeWaited < maxWaitTime) {
+                            if (_connectionState.value is ConnectionState.Connected) {
+                                Log.d(TAG, "Đã kết nối đến server sau $timeWaited ms")
+                                break
+                            }
+                            delay(checkInterval.toLong())
+                            timeWaited += checkInterval
+                            Log.d(TAG, "Đang đợi kết nối, đã đợi $timeWaited ms")
+                        }
+                    } else {
+                        Log.e(TAG, "Không thể khởi động server sau nhiều lần thử")
+                        _connectionState.value = ConnectionState.Error("Không thể khởi động server. Hãy kiểm tra mạng.")
+                        return@launch
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Lỗi khởi động server: ${e.message}", e)
+                    _connectionState.value = ConnectionState.Error("Không thể khởi động server: ${e.message}")
+                    return@launch
                 }
             }
             
@@ -285,6 +351,9 @@ class OnlineGameRepository(
                 _connectionState.value = ConnectionState.Error("Không thể tạo phòng: không kết nối được đến server") 
                 return@launch
             }
+            
+            // Lưu tên người chơi
+            this@OnlineGameRepository.playerName = playerName
             
             // Bây giờ đã kết nối, tạo phòng
             Log.d(TAG, "Đã kết nối, gửi yêu cầu tạo phòng")
@@ -318,9 +387,11 @@ class OnlineGameRepository(
                 
                 // Trong trường hợp đã kết nối ít nhất một lần, sử dụng địa chỉ IP đã được lưu
                 if (currentDeviceIp != "unknown") {
+                    Log.d(TAG, "Connecting using saved IP: $currentDeviceIp")
                     connectToServerSimple(currentDeviceIp, SERVER_PORT)
                 } else {
                     val localIp = getLocalIpAddress() ?: "127.0.0.1"
+                    Log.d(TAG, "Connecting using detected IP: $localIp")
                     connectToServerSimple(localIp, SERVER_PORT)
                 }
                 
@@ -331,42 +402,20 @@ class OnlineGameRepository(
                 
                 while (timeWaited < maxWaitTime) {
                     if (_connectionState.value is ConnectionState.Connected) {
+                        Log.d(TAG, "Connection successful after $timeWaited ms")
                         break
                     }
                     delay(checkInterval.toLong())
                     timeWaited += checkInterval
-                    Log.d(TAG, "Đang đợi kết nối, đã đợi $timeWaited ms")
+                    Log.d(TAG, "Waiting for connection, waited $timeWaited ms")
                 }
             }
             
             // Kiểm tra lại kết nối
             if (wsClient == null || _connectionState.value !is ConnectionState.Connected) {
-                Log.e(TAG, "Không thể refresh room list: không kết nối được đến server")
-                
-                // Thử kết nối với localhost
-                if (currentDeviceIp != "127.0.0.1" && currentDeviceIp != "localhost") {
-                    Log.d(TAG, "Thử kết nối với localhost")
-                    connectToServerSimple("127.0.0.1", SERVER_PORT)
-                    
-                    // Đợi kết nối thành công (tối đa 1 giây)
-                    var timeWaited = 0
-                    val checkInterval = 200
-                    val maxWaitTime = 1000
-                    
-                    while (timeWaited < maxWaitTime) {
-                        if (_connectionState.value is ConnectionState.Connected) {
-                            break
-                        }
-                        delay(checkInterval.toLong())
-                        timeWaited += checkInterval
-                    }
-                }
-                
-                // Nếu vẫn không kết nối được, trả về lỗi
-                if (_connectionState.value !is ConnectionState.Connected) {
-                    Log.e(TAG, "Vẫn không thể kết nối với server sau khi thử nhiều lần")
-                    return@launch
-                }
+                Log.e(TAG, "Cannot refresh room list: not connected to server")
+                _connectionState.value = ConnectionState.Error("Cannot refresh room list: not connected to server")
+                return@launch
             }
             
             // Gửi yêu cầu danh sách phòng
@@ -381,21 +430,43 @@ class OnlineGameRepository(
     }
     
     /**
-     * Join an existing room
+     * Join an existing room - phiên bản cải thiện
+     * Quan trọng: Phương thức này không được đóng kết nối WebSocket hiện tại
      */
     fun joinRoom(roomId: String) {
         if (wsClient == null) {
             Log.e(TAG, "Cannot join room: not connected to server")
+            
+            // Nếu đang chạy trên máy ảo, hiển thị thông báo đặc biệt
+            if (isRunningOnEmulator()) {
+                _connectionState.value = ConnectionState.Error(
+                    "Không thể kết nối đến phòng: đang chạy trên máy ảo.\n\n" +
+                    "Kết nối giữa các máy ảo cần cấu hình đặc biệt, vui lòng sử dụng thiết bị thật."
+                )
+                return
+            }
+            
+            _connectionState.value = ConnectionState.Error("Cannot join room: not connected to server. Please try again.")
             return
         }
+        
+        Log.d(TAG, "Attempting to join room with ID: $roomId")
+        
+        // Lưu roomId hiện tại
+        currentRoomId = roomId
         
         val joinRoomMessage = JoinRoomMessage(
             roomId = roomId,
             playerName = playerName
         )
         
-        wsClient?.sendMessage(joinRoomMessage)
-        Log.d(TAG, "Sent join room request: $roomId")
+        try {
+            wsClient?.sendMessage(joinRoomMessage)
+            Log.d(TAG, "Sent join room request: $roomId")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error sending join room message: ${e.message}", e)
+            _connectionState.value = ConnectionState.Error("Không thể gửi yêu cầu tham gia phòng: ${e.message}")
+        }
     }
     
     /**
@@ -705,6 +776,28 @@ class OnlineGameRepository(
     }
     
     /**
+     * Kiểm tra xem ứng dụng có đang chạy trên máy ảo không
+     */
+    private fun isRunningOnEmulator(): Boolean {
+        // Kiểm tra các dấu hiệu của môi trường máy ảo
+        return (android.os.Build.BRAND.startsWith("generic") 
+                || android.os.Build.DEVICE.startsWith("generic")
+                || android.os.Build.PRODUCT.contains("sdk")
+                || android.os.Build.HARDWARE.contains("goldfish")
+                || android.os.Build.HARDWARE.contains("ranchu")
+                || android.os.Build.FINGERPRINT.startsWith("generic")
+                || android.os.Build.FINGERPRINT.startsWith("unknown")
+                || android.os.Build.MODEL.contains("google_sdk")
+                || android.os.Build.MODEL.contains("Emulator")
+                || android.os.Build.MODEL.contains("Android SDK built for x86")
+                || android.os.Build.MANUFACTURER.contains("Genymotion")
+                || android.os.Build.HOST.startsWith("Build")
+                || (android.os.Build.BRAND.startsWith("generic") && android.os.Build.DEVICE.startsWith("generic"))
+                || "google_sdk" == android.os.Build.PRODUCT
+                || currentDeviceIp.startsWith("10.0.2."))
+    }
+
+    /**
      * Kết nối đơn giản đến server không kiểm tra trước
      */
     private fun connectToServerSimple(host: String, port: Int) {
@@ -714,8 +807,31 @@ class OnlineGameRepository(
             // Đóng client cũ nếu có
             wsClient?.disconnect()
             
+            // Xử lý đặc biệt cho máy ảo
+            val isEmulator = isRunningOnEmulator()
+            
+            // Quyết định địa chỉ kết nối thực tế
+            val effectiveHost = when {
+                // Nếu đang kết nối đến chính thiết bị (host), luôn dùng localhost
+                host == currentDeviceIp || _connectionState.value == ConnectionState.Hosting -> {
+                    Log.d(TAG, "Chuyển đổi kết nối đến localhost vì đang kết nối đến chính mình")
+                    "127.0.0.1"
+                }
+                
+                // Nếu đang chạy trên máy ảo và cố kết nối đến máy ảo khác trong cùng máy chủ
+                isEmulator && !host.startsWith("127.0.0.") -> {
+                    Log.d(TAG, "Đang chạy trên máy ảo, sẽ thiết lập kết nối đặc biệt")
+                    // Lưu ý: Máy ảo không thể kết nối trực tiếp đến máy ảo khác với IP 10.0.2.x
+                    // Cần thêm xử lý bổ sung với ADB port forwarding
+                    host
+                }
+                
+                // Trường hợp thông thường
+                else -> host
+            }
+            
             // Tạo client mới 
-            wsClient = TicTacToeClient.create(host, port, coroutineScope)
+            wsClient = TicTacToeClient.create(effectiveHost, port, coroutineScope)
             
             // Handle connection events
             coroutineScope.launch {
@@ -742,33 +858,16 @@ class OnlineGameRepository(
                             Log.e(TAG, "Connection error: ${event.message}")
                             _connectionState.value = ConnectionState.Error(event.message)
                             
-                            // Chỉ thử kết nối dự phòng nếu không dùng IP thủ công
-                            if (manualHostIp.isNullOrBlank()) {
-                                val isEmulator = currentDeviceIp.startsWith("10.0.2.")
-                                
+                            // Chỉ thử kết nối dự phòng nếu không dùng IP thủ công và nếu đang là người tạo phòng
+                            if (manualHostIp.isNullOrBlank() && _connectionState.value == ConnectionState.Hosting) {
+                                // Nếu host không thể kết nối đến chính mình, thử localhost
                                 if (host != "127.0.0.1" && host != "localhost") {
-                                    Log.d(TAG, "Trying fallback to localhost")
+                                    Log.d(TAG, "Host không thể kết nối đến chính mình. Thử dùng localhost...")
                                     coroutineScope.launch(Dispatchers.IO) {
                                         delay(500) // Đợi chút để tránh nhiều kết nối cùng lúc
                                         connectToServerSimple("127.0.0.1", port)
                                     }
-                                } else if (isEmulator && host != "10.0.2.2" && host != "10.0.2.15") {
-                                    // Trong môi trường máy ảo, thử kết nối với địa chỉ đặc biệt của máy chủ
-                                    Log.d(TAG, "Trying fallback to emulator host (10.0.2.2)")
-                                    coroutineScope.launch(Dispatchers.IO) {
-                                        delay(500)
-                                        connectToServerSimple("10.0.2.2", port)
-                                    }
-                                } else if (!isEmulator && currentDeviceIp.startsWith("192.168.") && host != currentDeviceIp) {
-                                    // Trong môi trường thiết bị thật, thử kết nối với IP của thiết bị hiện tại
-                                    Log.d(TAG, "Trying fallback to current device IP: $currentDeviceIp")
-                                    coroutineScope.launch(Dispatchers.IO) {
-                                        delay(500)
-                                        connectToServerSimple(currentDeviceIp, port)
-                                    }
                                 }
-                            } else {
-                                Log.d(TAG, "Not trying fallback connections because manual IP is set: $manualHostIp")
                             }
                         }
                         is ConnectionEvent.Reconnecting -> {
@@ -779,19 +878,20 @@ class OnlineGameRepository(
                 }
             }
             
-            // Handle WebSocket messages
+            // Handle game messages
             coroutineScope.launch {
                 wsClient?.messageFlow?.collectLatest { message ->
                     handleWebSocketMessage(message)
                 }
             }
             
-            // Connect
+            // Connect to server
             wsClient?.connect()
             
+            _connectionState.value = ConnectionState.Connecting
         } catch (e: Exception) {
-            Log.e(TAG, "Error connecting to server: ${e.message}", e)
-            _connectionState.value = ConnectionState.Error("Failed to connect: ${e.message}")
+            Log.e(TAG, "Error connecting to server", e)
+            _connectionState.value = ConnectionState.Error("Error: ${e.message}")
         }
     }
     
@@ -950,6 +1050,18 @@ class OnlineGameRepository(
                     currentRoomId = message.room.id
                     _currentRoom.value = message.room
                     Log.d(TAG, "Set current room ID to ${message.room.id}")
+                    
+                    // Đảm bảo chúng ta không cố gắng vào phòng nhiều lần
+                    val currentState = _connectionState.value
+                    if ((currentState is ConnectionState.Connected || currentState is ConnectionState.Hosting) && 
+                        message.room.playerCount == 1) {
+                            
+                        // Tự động tham gia phòng khi là người tạo phòng
+                        Log.d(TAG, "Host tự động tham gia phòng: ${message.room.id}")
+                        
+                        // Host không cần gọi joinRoom vì đã được tự động thêm vào phòng
+                        // Chỉ cần đảm bảo cập nhật đúng trạng thái
+                    }
                 }
                 
                 // Handle room update
@@ -974,6 +1086,11 @@ class OnlineGameRepository(
                         // Update current room if this is our room
                         if (currentRoomId == message.room.id) {
                             _currentRoom.value = message.room
+                            
+                            // Log chi tiết về phòng hiện tại để debug
+                            Log.d(TAG, "Updated current room: ID=${message.room.id}, Name=${message.room.name}, " +
+                                   "Host=${message.room.hostName}, Players=${message.room.playerCount}/${message.room.maxPlayers}, " +
+                                   "Status=${message.room.status}")
                         }
                         
                         // Auto-request room list update to keep list fresh
@@ -1070,10 +1187,46 @@ class OnlineGameRepository(
                 Log.e(TAG, "Invalid IP address format: $ipAddress")
                 return
             }
+            
+            Log.d(TAG, "Setting manual host IP to: $ipAddress")
+            manualHostIp = ipAddress
+            
+            // Disconnect current connections to ensure the new IP is used
+            if (_connectionState.value != ConnectionState.Disconnected) {
+                Log.d(TAG, "Disconnecting current connections to use new manual IP")
+                disconnect()
+            }
+        } else {
+            Log.d(TAG, "Clearing manual host IP")
+            manualHostIp = null
+        }
+    }
+    
+    /**
+     * Phương thức chuyên dụng để kết nối trong môi trường máy ảo
+     * Người dùng nên sử dụng phương thức này khi chơi trên máy ảo Android
+     */
+    fun connectEmulators(targetPort: Int = SERVER_PORT) {
+        if (!isRunningOnEmulator()) {
+            Log.d(TAG, "Không phải môi trường máy ảo, không cần xử lý đặc biệt")
+            return
         }
         
-        manualHostIp = ipAddress
-        Log.d(TAG, "Manual host IP " + (if (ipAddress.isNullOrBlank()) "cleared" else "set to: $ipAddress"))
+        Log.d(TAG, "Thực hiện kết nối đặc biệt cho môi trường máy ảo")
+        
+        // Trên máy ảo Android, các máy ảo khác nhau không thể kết nối trực tiếp.
+        // Phương án giải quyết:
+        // 1. Sử dụng adb port forwarding: adb forward tcp:8887 tcp:8887
+        // 2. Khi đó, mỗi máy ảo có thể kết nối qua 10.0.2.2 (localhost của máy chủ)
+        
+        _connectionState.value = ConnectionState.Error(
+            "Kết nối giữa các máy ảo không được hỗ trợ tự động.\n\n" +
+            "Để kiểm tra tính năng này, vui lòng:\n" +
+            "1. Sử dụng thiết bị Android thật thay vì máy ảo.\n" +
+            "2. Hoặc chạy lệnh sau trong terminal:\n" +
+            "   adb forward tcp:$targetPort tcp:$targetPort\n" +
+            "   (Sau đó kết nối tới 10.0.2.2:$targetPort)"
+        )
     }
 }
 
