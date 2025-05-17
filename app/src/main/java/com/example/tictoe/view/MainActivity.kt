@@ -160,14 +160,23 @@ class MainActivity : ComponentActivity() {
                             },
                             onCreateRoom = {
                                 soundManager.playClickSound()
-                                // Sử dụng tên người dùng từ SettingsViewModel
-                                onlineGameRepository.hostGame(username)
-                                menuViewModel.navigateToOnlineMatching()
+                                menuViewModel.navigateToCreateRoom()
                             },
                             onJoinRoom = { serverIp ->
                                 soundManager.playClickSound()
                                 // Tham gia phòng với IP đã chọn
                                 onlineGameRepository.joinGame(username, serverIp)
+                                menuViewModel.navigateToOnlineMatching()
+                            },
+                            repository = onlineGameRepository
+                        )
+                        "create_room" -> CreateRoomScreen(
+                            onBack = {
+                                soundManager.playClickSound()
+                                menuViewModel.navigateToAvailableRooms()
+                            },
+                            onRoomCreated = {
+                                soundManager.playClickSound()
                                 menuViewModel.navigateToOnlineMatching()
                             },
                             repository = onlineGameRepository
