@@ -3,6 +3,7 @@ package com.example.tictoe.network
 import android.util.Log
 import com.example.tictoe.model.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -10,18 +11,45 @@ import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
 import java.net.InetSocketAddress
+import java.net.UnknownHostException
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.lang.Exception
 
 /**
  * WebSocket server for Tic Tac Toe game
  */
 class TicToeWebSocketServer(
-    host: String,
-    port: Int,
-    private val coroutineScope: CoroutineScope
-) : WebSocketServer(InetSocketAddress(host, port)) {
-    private val tag = "TicToeWebSocketServer"
+    address: InetSocketAddress,
+    private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO)
+) : WebSocketServer(address) {
+    companion object {
+        private const val TAG = "TicToeWebSocketServer"
+        
+        // Factory method để tạo và khởi động server
+        fun createServer(port: Int, coroutineScope: CoroutineScope): TicToeWebSocketServer {
+            Log.d(TAG, "Creating WebSocket server on port $port")
+            // Sử dụng InetSocketAddress(port) mà không chỉ định IP để lắng nghe trên tất cả giao diện
+            val server = TicToeWebSocketServer(InetSocketAddress(port), coroutineScope)
+            
+            // Khởi động server trong một coroutine
+            coroutineScope.launch(Dispatchers.IO) {
+                try {
+                    Log.d(TAG, "Starting WebSocket server")
+                    server.setReuseAddr(true) // Cho phép tái sử dụng địa chỉ
+                    server.start()
+                    Log.d(TAG, "WebSocket server started successfully on port $port")
+                } catch (e: UnknownHostException) {
+                    Log.e(TAG, "Error starting WebSocket server: ${e.message}", e)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unexpected error starting WebSocket server: ${e.message}", e)
+                }
+            }
+            
+            return server
+        }
+    }
     
     // Map of WebSocket connections to player names
     private val players = ConcurrentHashMap<WebSocket, String>()
@@ -35,6 +63,7 @@ class TicToeWebSocketServer(
     
     init {
         connectionLostTimeout = 60 // 60 seconds
+        this.setReuseAddr(true) // Cho phép tái sử dụng địa chỉ
     }
     
     /**
@@ -42,11 +71,14 @@ class TicToeWebSocketServer(
      */
     override fun onOpen(conn: WebSocket, handshake: ClientHandshake) {
         val address = conn.remoteSocketAddress.address.hostAddress
-        Log.d(tag, "New connection from: $address")
+        Log.d(TAG, "New connection from: $address")
         
         coroutineScope.launch {
             _serverEvents.emit(ServerEvent.ClientConnected(address))
         }
+        
+        // Gửi thông báo kết nối thành công
+        conn.send("Connection established")
     }
     
     /**
@@ -56,10 +88,10 @@ class TicToeWebSocketServer(
         val address = conn.remoteSocketAddress.address.hostAddress
         val playerName = players[conn]
         
-        Log.d(tag, "Connection closed from: $address, player: $playerName")
+        Log.d(TAG, "Connection closed from: $address, player: $playerName")
         
         if (playerName == null) {
-            Log.w(tag, "Unknown player disconnected from $address")
+            Log.w(TAG, "Unknown player disconnected from $address")
             return
         }
         
@@ -93,7 +125,7 @@ class TicToeWebSocketServer(
             // Remove the game
             games.remove(gameId)
             
-            Log.d(tag, "Game $gameId removed due to player $playerName disconnection")
+            Log.d(TAG, "Game $gameId removed due to player $playerName disconnection")
             
             coroutineScope.launch {
                 _serverEvents.emit(ServerEvent.PlayerDisconnected(gameId, playerName))
@@ -113,11 +145,11 @@ class TicToeWebSocketServer(
      */
     override fun onMessage(conn: WebSocket, message: String) {
         val address = conn.remoteSocketAddress.address.hostAddress
-        Log.d(tag, "Received message from $address: $message")
+        Log.d(TAG, "Received message from $address: $message")
         
         val webSocketMessage = WebSocketMessage.fromJson(message)
         if (webSocketMessage == null) {
-            Log.e(tag, "Invalid message format: $message")
+            Log.e(TAG, "Invalid message format: $message")
             return
         }
         
@@ -135,7 +167,7 @@ class TicToeWebSocketServer(
             is DisconnectMessage -> handleDisconnectMessage(conn, message)
             is GameStateMessage -> {
                 // Client shouldn't send GameState messages
-                Log.w(tag, "Received unexpected GameState message from client")
+                Log.w(TAG, "Received unexpected GameState message from client")
             }
         }
     }
@@ -186,7 +218,7 @@ class TicToeWebSocketServer(
         
         sendMessage(conn, gameStateMessage)
         
-        Log.d(tag, "Created new game: $gameId with player: $playerName")
+        Log.d(TAG, "Created new game: $gameId with player: $playerName")
         coroutineScope.launch {
             _serverEvents.emit(ServerEvent.GameCreated(gameId, playerName))
         }
@@ -221,7 +253,7 @@ class TicToeWebSocketServer(
             sendMessage(gameRoom.player1.connection, gameStateMessage)
             sendMessage(conn, gameStateMessage)
             
-            Log.d(tag, "Player $playerName joined game: $gameId")
+            Log.d(TAG, "Player $playerName joined game: $gameId")
             coroutineScope.launch {
                 _serverEvents.emit(ServerEvent.PlayerJoined(gameId, playerName))
             }
@@ -244,107 +276,104 @@ class TicToeWebSocketServer(
         // Check if the game exists
         val gameRoom = games[gameId]
         if (gameRoom == null) {
-            Log.e(tag, "Game not found: $gameId")
+            Log.e(TAG, "Game not found: $gameId")
             return
         }
         
-        // Check if it's this player's turn
-        if (gameRoom.currentPlayer != playerName) {
-            Log.e(tag, "Not player's turn: $playerName")
+        // Check if it's the player's turn
+        if (playerName != gameRoom.currentPlayer) {
+            Log.e(TAG, "Not player's turn: $playerName, current turn: ${gameRoom.currentPlayer}")
             return
         }
         
         // Check if the cell is already occupied
         if (gameRoom.board[row][col].isNotEmpty()) {
-            Log.e(tag, "Cell already occupied: $row, $col")
+            Log.e(TAG, "Cell already occupied: row=$row, col=$col")
             return
         }
         
-        // Mark the cell
-        val symbol = if (playerName == gameRoom.player1.name) "X" else "O"
-        gameRoom.board[row][col] = symbol
+        // Make the move
+        val playerSymbol = if (playerName == gameRoom.player1.name) "X" else "O"
+        gameRoom.board[row][col] = playerSymbol
         
-        // Check game state after move
-        checkGameState(gameId, gameRoom)
+        // Change turn
+        gameRoom.currentPlayer = if (playerName == gameRoom.player1.name) 
+            gameRoom.player2?.name ?: gameRoom.player1.name 
+        else 
+            gameRoom.player1.name
+        
+        // Check for win or draw
+        val (hasWinner, winnerSymbol) = checkForWinner(gameRoom.board)
+        val isDraw = if (!hasWinner) isBoardFull(gameRoom.board) else false
+        
+        if (hasWinner || isDraw) {
+            handleGameOver(gameId, gameRoom, winnerSymbol)
+        } else {
+            // Send updated game state
+            val gameStateMessage = GameStateMessage(
+                gameId = gameId,
+                board = gameRoom.board.map { it.toList() },
+                currentPlayer = gameRoom.currentPlayer,
+                player1 = gameRoom.player1.name,
+                player2 = gameRoom.player2?.name ?: "",
+                gameStatus = GameStatus.PLAYING.name
+            )
+            
+            sendMessage(gameRoom.player1.connection, gameStateMessage)
+            gameRoom.player2?.let { player2 ->
+                sendMessage(player2.connection, gameStateMessage)
+            }
+        }
     }
     
     /**
-     * Check game state after each move
+     * Check if there's a winner
      */
-    private fun checkGameState(gameId: String, gameRoom: GameRoom) {
-        val board = gameRoom.board
-        
-        // Check horizontal rows
+    private fun checkForWinner(board: Array<Array<String>>): Pair<Boolean, String?> {
+        // Check rows
         for (i in 0..2) {
             if (board[i][0].isNotEmpty() && board[i][0] == board[i][1] && board[i][1] == board[i][2]) {
-                endGame(gameId, gameRoom, board[i][0])
-                return
+                return Pair(true, board[i][0])
             }
         }
         
-        // Check vertical columns
+        // Check columns
         for (i in 0..2) {
             if (board[0][i].isNotEmpty() && board[0][i] == board[1][i] && board[1][i] == board[2][i]) {
-                endGame(gameId, gameRoom, board[0][i])
-                return
+                return Pair(true, board[0][i])
             }
         }
         
         // Check diagonals
         if (board[0][0].isNotEmpty() && board[0][0] == board[1][1] && board[1][1] == board[2][2]) {
-            endGame(gameId, gameRoom, board[0][0])
-            return
+            return Pair(true, board[0][0])
         }
         
         if (board[0][2].isNotEmpty() && board[0][2] == board[1][1] && board[1][1] == board[2][0]) {
-            endGame(gameId, gameRoom, board[0][2])
-            return
+            return Pair(true, board[0][2])
         }
         
-        // Check for draw
-        var isDraw = true
-        for (i in 0..2) {
-            for (j in 0..2) {
-                if (board[i][j].isEmpty()) {
-                    isDraw = false
-                    break
-                }
-            }
-            if (!isDraw) break
-        }
-        
-        if (isDraw) {
-            endGame(gameId, gameRoom, null)
-            return
-        }
-        
-        // Switch turns
-        gameRoom.currentPlayer = if (gameRoom.currentPlayer == gameRoom.player1.name) {
-            gameRoom.player2?.name ?: gameRoom.player1.name
-        } else {
-            gameRoom.player1.name
-        }
-        
-        // Send new game state
-        val gameStateMessage = GameStateMessage(
-            gameId = gameId,
-            board = gameRoom.board.map { it.toList() },
-            currentPlayer = gameRoom.currentPlayer,
-            player1 = gameRoom.player1.name,
-            player2 = gameRoom.player2?.name ?: "",
-            gameStatus = gameRoom.status.name
-        )
-        
-        sendMessage(gameRoom.player1.connection, gameStateMessage)
-        gameRoom.player2?.let { player2 ->
-            sendMessage(player2.connection, gameStateMessage)
-        }
+        return Pair(false, null)
     }
     
     /**
-     * End the game
+     * Check if the board is full (draw)
      */
-    private fun endGame(gameId: String, gameRoom: GameRoom, winnerSymbol: String?) {
+    private fun isBoardFull(board: Array<Array<String>>): Boolean {
+        for (row in board) {
+            for (cell in row) {
+                if (cell.isEmpty()) {
+                    return false
+                }
+            }
+        }
+        return true
+    }
+    
+    /**
+     * Handle game over
+     */
+    private fun handleGameOver(gameId: String, gameRoom: GameRoom, winnerSymbol: String?) {
         // Update game status
         gameRoom.status = GameStatus.GAME_OVER
         
@@ -381,7 +410,7 @@ class TicToeWebSocketServer(
         
         // Log game result
         val resultMessage = if (isDraw) "Game ended in a draw" else "Game won by $winner"
-        Log.d(tag, "$resultMessage, gameId: $gameId")
+        Log.d(TAG, "$resultMessage, gameId: $gameId")
         
         coroutineScope.launch {
             _serverEvents.emit(
@@ -401,7 +430,7 @@ class TicToeWebSocketServer(
         // Check if the game exists
         val gameRoom = games[gameId]
         if (gameRoom == null) {
-            Log.e(tag, "Game not found: $gameId")
+            Log.e(TAG, "Game not found: $gameId")
             return
         }
         
@@ -415,7 +444,7 @@ class TicToeWebSocketServer(
             // Message from player 2, send to player 1
             sendMessage(gameRoom.player1.connection, message)
         } else {
-            Log.e(tag, "Unknown player sent chat message: $playerName")
+            Log.e(TAG, "Unknown player sent chat message: $playerName")
         }
     }
     
@@ -429,7 +458,7 @@ class TicToeWebSocketServer(
         // Check if the game exists
         val gameRoom = games[gameId]
         if (gameRoom == null) {
-            Log.e(tag, "Game not found: $gameId")
+            Log.e(TAG, "Game not found: $gameId")
             return
         }
         
@@ -443,13 +472,13 @@ class TicToeWebSocketServer(
             // Disconnect from player 2, notify player 1
             sendMessage(gameRoom.player1.connection, message)
         } else {
-            Log.e(tag, "Unknown player disconnected: $playerName")
+            Log.e(TAG, "Unknown player disconnected: $playerName")
         }
         
         // Remove the game
         games.remove(gameId)
         
-        Log.d(tag, "Player $playerName disconnected from game: $gameId")
+        Log.d(TAG, "Player $playerName disconnected from game: $gameId")
         coroutineScope.launch {
             _serverEvents.emit(ServerEvent.PlayerDisconnected(gameId, playerName))
         }
@@ -470,7 +499,7 @@ class TicToeWebSocketServer(
      */
     override fun onError(conn: WebSocket?, ex: Exception) {
         val address = conn?.remoteSocketAddress?.address?.hostAddress ?: "Unknown"
-        Log.e(tag, "Error for connection from $address", ex)
+        Log.e(TAG, "Error for connection from $address", ex)
         
         coroutineScope.launch {
             _serverEvents.emit(ServerEvent.ServerError(ex.message ?: "Unknown error"))
@@ -481,11 +510,16 @@ class TicToeWebSocketServer(
      * When the server starts
      */
     override fun onStart() {
-        Log.d(tag, "WebSocket server started on port ${address.port}")
+        Log.d(TAG, "WebSocket server started on port ${address.port} with address ${address.address.hostAddress}")
         
         coroutineScope.launch {
             _serverEvents.emit(ServerEvent.ServerStarted(address.port))
         }
+    }
+    
+    override fun onMessage(conn: WebSocket, message: ByteBuffer) {
+        // Thường thì phương thức này không cần xử lý cho Tic Tac Toe
+        Log.d(TAG, "Received binary message from ${conn.remoteSocketAddress.address.hostAddress}")
     }
 }
 

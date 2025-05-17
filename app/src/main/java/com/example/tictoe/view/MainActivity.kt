@@ -186,7 +186,8 @@ class MainActivity : ComponentActivity() {
                                 Log.d("TicToe", "Match found with player: $playerName")
                                 menuViewModel.onMatchFound(playerName)
                             },
-                            viewModel = menuViewModel
+                            viewModel = menuViewModel,
+                            repository = onlineGameRepository
                         )
                         "game" -> {
                             Log.d("TicToe", "Displaying game screen with isVsBot=$isVsBot")

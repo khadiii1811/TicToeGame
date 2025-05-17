@@ -5,8 +5,10 @@ import android.net.wifi.WifiManager
 import android.util.Log
 import com.example.tictoe.network.ConnectionEvent
 import com.example.tictoe.network.TicToeWebSocketClient
+import com.example.tictoe.network.TicToeWebSocketServer
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +17,8 @@ import kotlinx.coroutines.launch
 import java.io.IOException
 import java.lang.Exception
 import java.net.InetAddress
+import java.net.Inet4Address
+import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -30,6 +34,10 @@ class OnlineGameRepository(
         private const val TAG = "OnlineGameRepository"
         private const val SERVER_PORT = 8887
         private const val HOST_SERVER_RANGE = 10 // Tìm kiếm host trong phạm vi 10 địa chỉ IP
+        
+        // Lưu lại IP của thiết bị hiện tại
+        var currentDeviceIp: String = "unknown"
+            private set
     }
     
     // Web socket client
@@ -55,6 +63,10 @@ class OnlineGameRepository(
     // Kiểm tra nếu đang tìm kiếm host
     private val isScanning = AtomicBoolean(false)
     
+    // Timeout for matchmaking (in milliseconds)
+    private val matchmakingTimeout = 60000L // Tăng lên 60 giây
+    private var matchmakingTimeoutJob: kotlinx.coroutines.Job? = null
+    
     /**
      * Khởi tạo repository
      */
@@ -69,17 +81,36 @@ class OnlineGameRepository(
         this.playerName = playerName
         currentGameId = UUID.randomUUID().toString()
         
+        // Lấy địa chỉ IP hiện tại
         val ip = getLocalIpAddress()
         if (ip == null) {
             _connectionState.value = ConnectionState.Error("Could not get local IP address")
             return
         }
         
-        Log.d(TAG, "Hosting game on IP: $ip")
+        Log.d(TAG, "Hosting game on IP: $ip and port: $SERVER_PORT")
         _connectionState.value = ConnectionState.Hosting
         
-        // Create and connect to the WebSocket server
-        connectToServer(ip, SERVER_PORT)
+        // Tạo và khởi động máy chủ WebSocket
+        try {
+            // Sử dụng phương thức createServer từ TicToeWebSocketServer
+            val server = TicToeWebSocketServer.createServer(SERVER_PORT, coroutineScope)
+            
+            // Chờ 1 giây để server khởi động
+            coroutineScope.launch {
+                delay(1000)
+                
+                // Connect to the WebSocket server as a client
+                Log.d(TAG, "Server started, connecting as client to our own server")
+                connectToServer(ip, SERVER_PORT)
+                
+                // Thêm IP của thiết bị host vào danh sách các host để thiết bị khác có thể dễ dàng tìm thấy
+                _discoveredHosts.value = listOf(ip)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting WebSocket server: ${e.message}", e)
+            _connectionState.value = ConnectionState.Error("Failed to start game server: ${e.message}")
+        }
     }
     
     /**
@@ -123,25 +154,60 @@ class OnlineGameRepository(
                 val batchSize = 25 // Process hosts in batches
                 val batches = hostRange.chunked(batchSize)
                 
+                // Add device's own IP for testing on same device
+                val ownIp = getLocalIpAddress()
+                if (ownIp != null) {
+                    Log.d(TAG, "Adding device's own IP to scan results for testing: $ownIp")
+                    foundHosts.add(ownIp)
+                    _discoveredHosts.value = foundHosts.toList()
+                }
+                
+                // Scan specific IPs first that are likely to be devices
+                val commonLastOctets = listOf(1, 100, 101, 102, 103, 104, 105, 2, 254)
+                commonLastOctets.forEach { i ->
+                    val hostToCheck = "$baseIp$i"
+                    
+                    try {
+                        Log.d(TAG, "Checking common host: $hostToCheck")
+                        if (isWebSocketServerRunning(hostToCheck, SERVER_PORT)) {
+                            Log.d(TAG, "Found WebSocket server at: $hostToCheck")
+                            synchronized(foundHosts) {
+                                if (!foundHosts.contains(hostToCheck)) {
+                                    foundHosts.add(hostToCheck)
+                                    _discoveredHosts.value = foundHosts.toList()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.d(TAG, "Error checking host $hostToCheck: ${e.message}")
+                    }
+                }
+                
                 // Create jobs for each batch of IPs
                 val jobs = batches.map { batch ->
                     coroutineScope.launch(Dispatchers.IO) {
                         for (i in batch) {
+                            // Skip already checked common IPs
+                            if (commonLastOctets.contains(i)) continue
+                            
                             val hostToCheck = "$baseIp$i"
                             
-                            // Skip own IP
-                            if (hostToCheck == getLocalIpAddress()) continue
-                            
                             try {
+                                Log.d(TAG, "Checking host: $hostToCheck")
                                 if (isWebSocketServerRunning(hostToCheck, SERVER_PORT)) {
                                     Log.d(TAG, "Found WebSocket server at: $hostToCheck")
                                     synchronized(foundHosts) {
-                                        foundHosts.add(hostToCheck)
-                                        _discoveredHosts.value = foundHosts.toList()
+                                        if (!foundHosts.contains(hostToCheck)) {
+                                            foundHosts.add(hostToCheck)
+                                            _discoveredHosts.value = foundHosts.toList()
+                                        }
                                     }
+                                } else {
+                                    Log.d(TAG, "No server at: $hostToCheck")
                                 }
                             } catch (e: Exception) {
                                 // Ignore errors for individual hosts
+                                Log.d(TAG, "Error checking host $hostToCheck: ${e.message}")
                             }
                         }
                     }
@@ -169,11 +235,30 @@ class OnlineGameRepository(
      */
     private fun isWebSocketServerRunning(host: String, port: Int): Boolean {
         return try {
+            Log.d(TAG, "Checking server at: $host:$port")
             val socket = java.net.Socket()
-            socket.connect(java.net.InetSocketAddress(host, port), 300) // 300ms timeout
+            // Tăng timeout lên 3000ms để có thời gian phát hiện tốt hơn trên mạng chậm
+            socket.connect(java.net.InetSocketAddress(host, port), 3000)
+            
+            // Kiểm tra xem kết nối có thực sự thành công
+            val connected = socket.isConnected
+            Log.d(TAG, "Socket connected: $connected")
+            
+            // Đóng socket đúng cách
             socket.close()
-            true
+            
+            if (connected) {
+                Log.d(TAG, "Server is running at: $host:$port")
+                true
+            } else {
+                Log.d(TAG, "Unable to connect to server at: $host:$port")
+                false
+            }
         } catch (e: IOException) {
+            Log.d(TAG, "No server at: $host:$port - ${e.message}")
+            false
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking server at: $host:$port", e)
             false
         }
     }
@@ -183,18 +268,49 @@ class OnlineGameRepository(
      */
     private fun getLocalIpAddress(): String? {
         try {
+            // Try WiFi first
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
             val ipAddress = wifiManager.connectionInfo.ipAddress
             
-            // Convert little-endian to big-endian if needed
-            val ipByteArray = ByteArray(4)
-            ipByteArray[0] = (ipAddress and 0xff).toByte()
-            ipByteArray[1] = (ipAddress shr 8 and 0xff).toByte()
-            ipByteArray[2] = (ipAddress shr 16 and 0xff).toByte()
-            ipByteArray[3] = (ipAddress shr 24 and 0xff).toByte()
+            if (ipAddress != 0) {
+                // Convert little-endian to big-endian if needed
+                val ipByteArray = ByteArray(4)
+                ipByteArray[0] = (ipAddress and 0xff).toByte()
+                ipByteArray[1] = (ipAddress shr 8 and 0xff).toByte()
+                ipByteArray[2] = (ipAddress shr 16 and 0xff).toByte()
+                ipByteArray[3] = (ipAddress shr 24 and 0xff).toByte()
+                
+                val ipAddr = InetAddress.getByAddress(ipByteArray)
+                val hostAddress = ipAddr.hostAddress
+                Log.d(TAG, "Found WiFi IP address: $hostAddress")
+                
+                // Cập nhật IP của thiết bị hiện tại
+                currentDeviceIp = hostAddress
+                
+                return hostAddress
+            }
             
-            val ipAddr = InetAddress.getByAddress(ipByteArray)
-            return ipAddr.hostAddress
+            // If WiFi IP is not available, try all network interfaces
+            val networkInterfaces = NetworkInterface.getNetworkInterfaces()
+            while (networkInterfaces.hasMoreElements()) {
+                val networkInterface = networkInterfaces.nextElement()
+                val inetAddresses = networkInterface.inetAddresses
+                while (inetAddresses.hasMoreElements()) {
+                    val inetAddress = inetAddresses.nextElement()
+                    if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
+                        val hostAddress = inetAddress.hostAddress
+                        Log.d(TAG, "Found IP address on interface ${networkInterface.name}: $hostAddress")
+                        
+                        // Cập nhật IP của thiết bị hiện tại
+                        currentDeviceIp = hostAddress
+                        
+                        return hostAddress
+                    }
+                }
+            }
+            
+            Log.e(TAG, "Could not find any suitable IP address")
+            return null
         } catch (e: Exception) {
             Log.e(TAG, "Error getting IP address", e)
             return null
@@ -242,13 +358,20 @@ class OnlineGameRepository(
                 }
             }
             
-            // Add connection timeout
+            // Cố gắng kết nối với thời gian chờ dài hơn
             coroutineScope.launch {
                 try {
-                    webSocketClient?.connectBlocking(5000, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    if (webSocketClient?.isOpen != true) {
+                    Log.d(TAG, "Connecting to WebSocket server with timeout")
+                    // Tăng timeout lên 15 giây để có nhiều thời gian kết nối hơn
+                    val connected = webSocketClient?.connectBlocking(15000, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    
+                    if (connected != true) {
                         Log.e(TAG, "Failed to connect to WebSocket server within timeout")
                         _connectionState.value = ConnectionState.Error("Connection timeout")
+                    } else {
+                        Log.d(TAG, "Successfully connected to WebSocket server")
+                        // Start matchmaking timeout
+                        startMatchmakingTimeout()
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error connecting to WebSocket server: ${e.message}", e)
@@ -259,6 +382,26 @@ class OnlineGameRepository(
         } catch (e: Exception) {
             Log.e(TAG, "Error creating WebSocket client: ${e.message}", e)
             _connectionState.value = ConnectionState.Error("Failed to connect: ${e.message}")
+        }
+    }
+    
+    /**
+     * Start the matchmaking timeout, which will trigger an error if no match is found
+     */
+    private fun startMatchmakingTimeout() {
+        // Cancel any existing timeout job
+        matchmakingTimeoutJob?.cancel()
+        
+        // Start a new timeout job
+        matchmakingTimeoutJob = coroutineScope.launch {
+            delay(matchmakingTimeout)
+            
+            // Check if we're still in WAITING_OPPONENT state
+            val currentGameState = _gameState.value
+            if (currentGameState == null || currentGameState.gameStatus == GameStatus.WAITING_OPPONENT) {
+                Log.d(TAG, "Matchmaking timeout reached")
+                _connectionState.value = ConnectionState.Error("No opponent found after waiting")
+            }
         }
     }
     
@@ -283,10 +426,16 @@ class OnlineGameRepository(
                 Log.d(TAG, "Disconnected from WebSocket server: ${event.code}, ${event.reason}")
                 _connectionState.value = ConnectionState.Disconnected
                 _gameState.value = null
+                
+                // Cancel matchmaking timeout
+                matchmakingTimeoutJob?.cancel()
             }
             is ConnectionEvent.Error -> {
                 Log.e(TAG, "WebSocket error: ${event.message}")
                 _connectionState.value = ConnectionState.Error(event.message)
+                
+                // Cancel matchmaking timeout
+                matchmakingTimeoutJob?.cancel()
             }
             is ConnectionEvent.Reconnecting -> {
                 Log.d(TAG, "Reconnecting to WebSocket server (attempt ${event.attempt})")
@@ -305,7 +454,7 @@ class OnlineGameRepository(
                 currentGameId = message.gameId
                 
                 // Update game state
-                _gameState.value = GameState(
+                val newGameState = GameState(
                     gameId = message.gameId,
                     board = message.board.map { row -> row.toTypedArray() }.toTypedArray(),
                     currentPlayer = message.currentPlayer,
@@ -315,6 +464,12 @@ class OnlineGameRepository(
                     isDraw = message.isDraw,
                     gameStatus = GameStatus.valueOf(message.gameStatus)
                 )
+                _gameState.value = newGameState
+                
+                // If the gameStatus is now PLAYING, cancel the matchmaking timeout
+                if (newGameState.gameStatus == GameStatus.PLAYING) {
+                    matchmakingTimeoutJob?.cancel()
+                }
             }
             is ConnectMessage -> {
                 Log.d(TAG, "Player connected: ${message.playerName}")
@@ -373,6 +528,9 @@ class OnlineGameRepository(
             webSocketClient?.sendMessage(disconnectMessage)
         }
         
+        // Cancel matchmaking timeout
+        matchmakingTimeoutJob?.cancel()
+        
         webSocketClient?.close()
         webSocketClient = null
         currentGameId = null
@@ -386,6 +544,13 @@ class OnlineGameRepository(
             playerName = name
             Log.d(TAG, "Player name set to: $playerName")
         }
+    }
+    
+    /**
+     * Lấy địa chỉ IP hiện tại để hiển thị
+     */
+    fun getCurrentIpAddress(): String {
+        return getLocalIpAddress() ?: "IP not available"
     }
 }
 

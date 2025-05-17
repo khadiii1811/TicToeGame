@@ -30,6 +30,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.tictoe.model.ConnectionState
+import com.example.tictoe.model.GameState
+import com.example.tictoe.model.GameStatus
+import com.example.tictoe.model.OnlineGameRepository
 import com.example.tictoe.ui.components.*
 import com.example.tictoe.ui.theme.AppColors
 import com.example.tictoe.ui.theme.GlowingBackgroundEffect
@@ -60,10 +64,55 @@ fun OnlineMatchingScreen(
     onBack: () -> Unit = {},
     onCancel: () -> Unit = {},
     onMatchFound: (String) -> Unit = {},
-    viewModel: MenuViewModel? = null
+    viewModel: MenuViewModel? = null,
+    repository: OnlineGameRepository? = null
 ) {
     // Get player name from viewModel if available
     val playerName by viewModel?.playerName?.collectAsState() ?: remember { mutableStateOf("") }
+    
+    // Observe connection state
+    val connectionState by repository?.connectionState?.collectAsState() ?: remember { mutableStateOf<ConnectionState>(ConnectionState.Disconnected) }
+    
+    // Observe game state
+    val gameState by repository?.gameState?.collectAsState() ?: remember { mutableStateOf<GameState?>(null) }
+    
+    // Status message state
+    var statusMessage by remember { mutableStateOf("Searching for opponent...") }
+    var hostingMode by remember { mutableStateOf(false) }
+    
+    // Error dialog state
+    var showErrorDialog by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+    
+    // Check if connection is in error state
+    LaunchedEffect(connectionState) {
+        hostingMode = connectionState is ConnectionState.Hosting
+        
+        statusMessage = when (connectionState) {
+            is ConnectionState.Connected -> "Connected to server. Waiting for opponent..."
+            is ConnectionState.Connecting -> "Connecting to server..."
+            is ConnectionState.Hosting -> "Hosting game. Waiting for opponent to join..."
+            is ConnectionState.Error -> {
+                val error = (connectionState as ConnectionState.Error).message
+                errorMessage = "Error: $error"
+                showErrorDialog = true
+                "Error: $error"
+            }
+            is ConnectionState.Reconnecting -> "Reconnecting..."
+            else -> "Searching for opponent..."
+        }
+    }
+    
+    // Check if opponent found
+    LaunchedEffect(gameState) {
+        if (gameState != null && gameState?.gameStatus == GameStatus.PLAYING && gameState?.player2?.isNotEmpty() == true) {
+            // Found an opponent
+            val opponentName = if (gameState?.player1 == playerName) gameState?.player2 else gameState?.player1
+            opponentName?.let {
+                onMatchFound(it)
+            }
+        }
+    }
     
     // Animation states
     val coroutineScope = rememberCoroutineScope()
@@ -143,37 +192,58 @@ fun OnlineMatchingScreen(
                 pulseFraction = 1.2f,
                 durationMillis = 1500
             ) {
-                        Box(
-                            modifier = Modifier
-                                .size(120.dp)
-                                .shadow(
+                Box(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .shadow(
                             elevation = 16.dp,
-                                    shape = CircleShape,
+                            shape = CircleShape,
                             spotColor = AppColors.AccentPurple.copy(alpha = 0.5f)
-                                )
-                                .background(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(
+                        )
+                        .background(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
                                     AppColors.AccentYellow.copy(alpha = 0.3f),
                                     AppColors.AccentPurple.copy(alpha = 0.2f)
-                                        )
-                                    ),
-                                    shape = CircleShape
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
+                                )
+                            ),
+                            shape = CircleShape
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(80.dp),
                         color = AppColors.AccentYellow,
                         strokeWidth = 6.dp
+                    )
+                    
+                    // Add HOST badge for hosting mode
+                    if (hostingMode) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .offset(y = (-12).dp)
+                                .background(
+                                    color = AppColors.AccentYellow,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "HOST",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.Black
                             )
                         }
                     }
-                    
+                }
+            }
+            
             Spacer(modifier = Modifier.height(24.dp))
                     
                     Text(
-                text = "Searching for opponent...",
+                text = statusMessage,
                 color = AppColors.OnSurface,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Medium
@@ -182,24 +252,23 @@ fun OnlineMatchingScreen(
             Spacer(modifier = Modifier.height(16.dp))
             
                         Text(
-                text = "This may take a few moments",
+                text = if (hostingMode) 
+                    "You've created a room. Waiting for another player to join" 
+                else 
+                    "Waiting for another player to connect",
                 color = AppColors.OnSurface.copy(alpha = 0.7f),
                 fontSize = 14.sp
                         )
             
             Spacer(modifier = Modifier.weight(1f))
             
-            // Simulate finding an opponent after a delay
-            LaunchedEffect(Unit) {
-                delay(5000) // Simulate 5 second delay before finding a match
-                val randomOpponent = "Player${Random.nextInt(1, 100)}"
-                onMatchFound(randomOpponent)
-        }
-        
             // Cancel button using GradientButton
             GradientButton(
                 text = "Cancel Matchmaking",
-                onClick = onCancel,
+                onClick = {
+                    repository?.disconnect()
+                    onCancel()
+                },
                     modifier = Modifier
                         .fillMaxWidth()
                     .padding(bottom = 24.dp),
@@ -210,6 +279,47 @@ fun OnlineMatchingScreen(
                     )
                 ),
                 textColor = Color.White
+            )
+        }
+        
+        // Error Dialog
+        if (showErrorDialog) {
+            AlertDialog(
+                onDismissRequest = { 
+                    showErrorDialog = false
+                    onCancel()
+                },
+                title = {
+                    Text(
+                        text = "Matchmaking Error",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text(
+                        text = errorMessage,
+                        color = Color.White
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showErrorDialog = false
+                            repository?.disconnect()
+                            onCancel()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            backgroundColor = AppColors.Primary,
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Return to Menu")
+                    }
+                },
+                backgroundColor = AppColors.Surface,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp)
             )
         }
     }
