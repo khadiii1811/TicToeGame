@@ -1,33 +1,42 @@
 # Tictoe Game
 
-## Hướng dẫn chạy Socket.IO server
+## Thông tin về game
 
-1. **Cài đặt Node.js**
-   - Tải và cài đặt Node.js từ [nodejs.org](https://nodejs.org/)
+Trò chơi Tic-tac-toe (caro 3x3) có thể chơi online qua mạng LAN sử dụng WebSocket.
 
-2. **Cài đặt các thư viện**
-   - Mở Command Prompt trong thư mục dự án
-   - Chạy lệnh: `npm install`
+## Tính năng
 
-3. **Tìm địa chỉ IP của máy tính**
-   - Mở Command Prompt và chạy lệnh: `ipconfig`
-   - Tìm dòng "IPv4 Address" (ví dụ: 192.168.1.5)
+- Chơi trên cùng thiết bị
+- Chơi với AI
+- Chơi online qua mạng LAN
+- Thống kê kết quả
 
-4. **Cập nhật SERVER_IP trong ứng dụng Android**
-   - Mở file `app/src/main/java/com/example/tictoe/model/OnlineGameRepository.kt`
-   - Cập nhật dòng:
-     ```kotlin
-     private const val SERVER_IP = "192.168.0.104" // ĐỔI THÀNH IP THẬT CỦA BẠN
-     ```
+## Cách chơi online
 
-5. **Chạy server**
-   - Mở Command Prompt trong thư mục dự án
-   - Chạy lệnh: `node server.js` hoặc `npm start`
-   - Server sẽ chạy trên cổng 8887
+1. **Máy làm host:**
+   - Vào mục "Play Online"
+   - Chọn "Create Game"
+   - Ứng dụng sẽ hiển thị IP của bạn
+   - Đợi người chơi khác kết nối
 
-6. **Kết nối từ ứng dụng Android**
-   - Chạy ứng dụng Android trên thiết bị
-   - Thiết bị phải kết nối cùng mạng Wi-Fi với máy tính chạy server
-   - Vào chế độ chơi online và tạo game mới
+2. **Máy tham gia game:**
+   - Vào mục "Play Online"
+   - Chọn "Join Game"
+   - Nhập IP của máy host
+   - Hoặc chọn từ danh sách máy đã phát hiện
 
-Nhớ tạo folder chức năng của mình ròi làm nhé
+## Yêu cầu
+
+- Hai thiết bị phải kết nối cùng mạng Wi-Fi
+- Cổng 8887 phải được cho phép trong tường lửa
+
+## Cấu trúc project
+
+- `network/TicTacToeServer.kt`: WebSocket server chạy trên thiết bị host
+- `network/TicTacToeClient.kt`: WebSocket client kết nối đến server
+- `model/OnlineGameRepository.kt`: Quản lý kết nối và trạng thái game
+- `model/WebSocketMessage.kt`: Định nghĩa các tin nhắn giao tiếp
+
+## Lưu ý
+
+Ứng dụng sử dụng Java WebSocket và OkHttp để kết nối trực tiếp giữa các thiết bị mà không cần server trung gian.

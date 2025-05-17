@@ -24,10 +24,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.tictoe.model.ConnectionState
 import com.example.tictoe.model.OnlineGameRepository
+import com.example.tictoe.model.RoomInfo
 import com.example.tictoe.ui.components.*
 import com.example.tictoe.ui.theme.AppColors
 import com.example.tictoe.ui.theme.GlowingBackgroundEffect
@@ -45,7 +47,10 @@ fun AvailableRoomsScreen(
     // Danh sách các host được phát hiện
     val discoveredHosts by repository?.discoveredHosts?.collectAsState() ?: remember { mutableStateOf(emptyList<String>()) }
     val connectionState by repository?.connectionState?.collectAsState() ?: remember { mutableStateOf(null) }
+    val availableRooms by repository?.availableRooms?.collectAsState() ?: remember { mutableStateOf(emptyList<RoomInfo>()) }
+    
     var isScanning by remember { mutableStateOf(false) }
+    var showCreateRoomDialog by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
     
     // IP thủ công và dialog
@@ -55,6 +60,10 @@ fun AvailableRoomsScreen(
     // Lấy địa chỉ IP hiện tại
     val localIpAddress = remember { repository?.getCurrentIpAddress() ?: "IP not available" }
     
+    // Variable for create room dialog
+    var newRoomName by remember { mutableStateOf("") }
+    var maxPlayers by remember { mutableStateOf("2") }
+    
     // Bắt đầu quét khi màn hình được hiển thị
     LaunchedEffect(Unit) {
         repository?.discoverHosts()
@@ -63,6 +72,21 @@ fun AvailableRoomsScreen(
         // Giả lập thời gian quét
         delay(5000)
         isScanning = false
+    }
+    
+    // Effect to refresh rooms periodically
+    LaunchedEffect(connectionState) {
+        if (connectionState is ConnectionState.Connected || 
+            connectionState is ConnectionState.Hosting) {
+            // Request rooms list immediately
+            repository?.refreshRooms()
+            
+            // Then start periodic refresh
+            while (true) {
+                delay(10000) // Update every 10 seconds
+                repository?.refreshRooms()
+            }
+        }
     }
     
     Box(
@@ -93,8 +117,8 @@ fun AvailableRoomsScreen(
             
             // Create room button
             GradientButton(
-                text = "Create Room & Host Game",
-                onClick = onCreateRoom,
+                text = "Create New Room",
+                onClick = { showCreateRoomDialog = true },
                 modifier = Modifier.fillMaxWidth(),
                 icon = Icons.Default.Add
             )
@@ -117,8 +141,9 @@ fun AvailableRoomsScreen(
                 onClick = { 
                     isScanning = true
                     repository?.discoverHosts()
+                    repository?.refreshRooms()
                     coroutineScope.launch {
-                        delay(5000)
+                        delay(3000)
                         isScanning = false
                     }
                 },
@@ -178,7 +203,7 @@ fun AvailableRoomsScreen(
                         fontSize = 14.sp
                     )
                 }
-            } else if (discoveredHosts.isEmpty()) {
+            } else if (availableRooms.isEmpty()) {
                 GlassCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -217,7 +242,7 @@ fun AvailableRoomsScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             // Room list
-            if (discoveredHosts.isNotEmpty()) {
+            if (availableRooms.isNotEmpty()) {
                 Text(
                     text = "Available Rooms",
                     color = AppColors.OnSurface,
@@ -233,8 +258,34 @@ fun AvailableRoomsScreen(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(discoveredHosts) { host ->
+                    items(availableRooms) { room ->
                         RoomItem(
+                            room = room,
+                            onJoin = { 
+                                repository?.joinRoom(room.id)
+                                onJoinRoom(room.hostName)
+                            }
+                        )
+                    }
+                }
+            } else if (discoveredHosts.isNotEmpty()) {
+                Text(
+                    text = "Available Servers",
+                    color = AppColors.OnSurface,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    textAlign = TextAlign.Start
+                )
+                
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(discoveredHosts) { host ->
+                        ServerItem(
                             hostIp = host,
                             localIpAddress = localIpAddress,
                             onJoin = { onJoinRoom(host) }
@@ -313,11 +364,125 @@ fun AvailableRoomsScreen(
                 shape = RoundedCornerShape(16.dp)
             )
         }
+        
+        // Create room dialog
+        if (showCreateRoomDialog) {
+            Dialog(onDismissRequest = { showCreateRoomDialog = false }) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    backgroundColor = AppColors.Surface,
+                    elevation = 8.dp
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Create New Room",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            fontSize = 18.sp
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Room name field
+                        OutlinedTextField(
+                            value = newRoomName,
+                            onValueChange = { newRoomName = it },
+                            label = { Text("Room Name") },
+                            singleLine = true,
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = Color.White,
+                                focusedBorderColor = AppColors.AccentYellow,
+                                focusedLabelColor = AppColors.AccentYellow,
+                                cursorColor = AppColors.AccentYellow,
+                                unfocusedBorderColor = Color.Gray,
+                                unfocusedLabelColor = Color.Gray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Max players field
+                        OutlinedTextField(
+                            value = maxPlayers,
+                            onValueChange = { 
+                                // Validate input to be a number between 2 and 10
+                                val parsedValue = it.toIntOrNull()
+                                if (it.isEmpty() || (parsedValue != null && parsedValue in 2..10)) {
+                                    maxPlayers = it
+                                }
+                            },
+                            label = { Text("Max Players (2-10)") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = TextFieldDefaults.outlinedTextFieldColors(
+                                textColor = Color.White,
+                                focusedBorderColor = AppColors.AccentYellow,
+                                focusedLabelColor = AppColors.AccentYellow,
+                                cursorColor = AppColors.AccentYellow,
+                                unfocusedBorderColor = Color.Gray,
+                                unfocusedLabelColor = Color.Gray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(24.dp))
+                        
+                        // Action buttons
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Button(
+                                onClick = { showCreateRoomDialog = false },
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = Color.DarkGray,
+                                    contentColor = Color.White
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancel")
+                            }
+                            
+                            Spacer(modifier = Modifier.width(16.dp))
+                            
+                            Button(
+                                onClick = {
+                                    if (newRoomName.isNotEmpty() && maxPlayers.isNotEmpty()) {
+                                        val maxPlayersNum = maxPlayers.toIntOrNull() ?: 2
+                                        repository?.createRoom(newRoomName, maxPlayersNum)
+                                        showCreateRoomDialog = false
+                                        
+                                        // Refresh the rooms list
+                                        coroutineScope.launch {
+                                            delay(500)
+                                            repository?.refreshRooms()
+                                        }
+                                    }
+                                },
+                                enabled = newRoomName.isNotEmpty() && maxPlayers.isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(
+                                    backgroundColor = AppColors.AccentYellow,
+                                    contentColor = Color.Black
+                                ),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Create")
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun RoomItem(
+private fun ServerItem(
     hostIp: String,
     localIpAddress: String,
     onJoin: () -> Unit
@@ -367,7 +532,7 @@ private fun RoomItem(
                 // Host details
                 Column {
                     Text(
-                        text = if (isOwnRoom) "Your Game Room" else "Game Room",
+                        text = if (isOwnRoom) "Your Game Server" else "Game Server",
                         color = AppColors.OnSurface,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -393,7 +558,7 @@ private fun RoomItem(
                     modifier = Modifier.height(36.dp)
                 ) {
                     Text(
-                        text = "Join",
+                        text = "Connect",
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
@@ -412,6 +577,123 @@ private fun RoomItem(
                         text = "Current Host",
                         color = AppColors.AccentYellow,
                         fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RoomItem(
+    room: RoomInfo,
+    onJoin: () -> Unit
+) {
+    // Check if room is full or active
+    val isFull = remember { room.playerCount >= room.maxPlayers }
+    val isActive = remember { room.status == "PLAYING" }
+    
+    GlassCard(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Room info
+            Column {
+                Text(
+                    text = room.name,
+                    color = AppColors.OnSurface,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = AppColors.OnSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Host: ${room.hostName}",
+                        color = AppColors.OnSurface.copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Group,
+                        contentDescription = null,
+                        tint = AppColors.OnSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${room.playerCount}/${room.maxPlayers} players",
+                        color = if (isFull) AppColors.Error else AppColors.OnSurface.copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            
+            // Status/Join button
+            if (isFull) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = AppColors.Error.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Full",
+                        color = AppColors.Error,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                }
+            } else if (isActive) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = AppColors.Info.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "In Game",
+                        color = AppColors.Info,
+                        fontWeight = FontWeight.Medium,
+                        fontSize = 14.sp
+                    )
+                }
+            } else {
+                Button(
+                    onClick = onJoin,
+                    colors = ButtonDefaults.buttonColors(
+                        backgroundColor = AppColors.AccentYellow,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Text(
+                        text = "Join",
+                        fontWeight = FontWeight.Bold,
                         fontSize = 14.sp
                     )
                 }

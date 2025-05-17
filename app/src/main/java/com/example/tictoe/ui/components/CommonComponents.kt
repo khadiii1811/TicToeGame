@@ -86,7 +86,8 @@ fun GradientButton(
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
     brush: Brush = AppColors.AccentGradient,
-    textColor: Color = Color.Black
+    textColor: Color = Color.Black,
+    enabled: Boolean = true
 ) {
     Button(
         onClick = onClick,
@@ -103,12 +104,20 @@ fun GradientButton(
         elevation = ButtonDefaults.elevation(
             defaultElevation = 0.dp,
             pressedElevation = 0.dp
-        )
+        ),
+        enabled = enabled
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(brush = brush),
+                .background(
+                    brush = if (enabled) brush else Brush.linearGradient(
+                        colors = listOf(
+                            Color.Gray.copy(alpha = 0.5f),
+                            Color.Gray.copy(alpha = 0.7f)
+                        )
+                    )
+                ),
             contentAlignment = Alignment.Center
         ) {
             Row(
@@ -119,7 +128,7 @@ fun GradientButton(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = textColor,
+                        tint = if (enabled) textColor else textColor.copy(alpha = 0.5f),
                         modifier = Modifier.size(24.dp)
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -129,7 +138,7 @@ fun GradientButton(
                     text = text,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = textColor
+                    color = if (enabled) textColor else textColor.copy(alpha = 0.5f)
                 )
             }
         }
