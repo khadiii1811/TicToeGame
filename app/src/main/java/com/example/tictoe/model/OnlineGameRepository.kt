@@ -213,7 +213,7 @@ class OnlineGameRepository(
                 // Kết nối đến server - kết nối qua IP thủ công hoặc IP được phát hiện, KHÔNG dùng localhost
                 connectToServerSimple(localIp, SERVER_PORT)
                 
-            } catch (e: Exception) {
+        } catch (e: Exception) {
                 Log.e(TAG, "Error hosting game: ${e.message}", e)
                 _connectionState.value = ConnectionState.Error("Failed to host game: ${e.message}")
             }
