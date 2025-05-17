@@ -4,8 +4,7 @@ import android.content.Context
 import android.net.wifi.WifiManager
 import android.util.Log
 import com.example.tictoe.network.ConnectionEvent
-import com.example.tictoe.network.TicToeWebSocketClient
-import com.example.tictoe.network.TicToeWebSocketServer
+import com.example.tictoe.network.SocketIOManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -35,13 +34,20 @@ class OnlineGameRepository(
         private const val SERVER_PORT = 8887
         private const val HOST_SERVER_RANGE = 10 // Tìm kiếm host trong phạm vi 10 địa chỉ IP
         
+        // Địa chỉ IP của máy chủ Socket.IO
+        // 10.0.2.2 là địa chỉ đặc biệt trong máy ảo Android để truy cập đến máy host (localhost của máy tính)
+        // Nếu bạn chạy trên thiết bị thật, hãy đổi thành IP thực của máy tính (ví dụ: 192.168.1.2)
+        private const val SERVER_IP = "10.0.2.2" // Đặc biệt cho máy ảo Android
+        
         // Lưu lại IP của thiết bị hiện tại
         var currentDeviceIp: String = "unknown"
             private set
     }
     
-    // Web socket client
-    private var webSocketClient: TicToeWebSocketClient? = null
+    // Socket.IO manager
+    private var socketManager: SocketIOManager? = null
+    
+
     
     // Game ID
     private var currentGameId: String? = null
@@ -81,49 +87,33 @@ class OnlineGameRepository(
         this.playerName = playerName
         currentGameId = UUID.randomUUID().toString()
         
-        // Lấy địa chỉ IP hiện tại
-        val ip = getLocalIpAddress()
-        if (ip == null) {
-            _connectionState.value = ConnectionState.Error("Could not get local IP address")
-            return
-        }
+        // Sử dụng SERVER_IP cố định thay vì tìm IP
+        val serverIp = SERVER_IP
+        Log.d(TAG, "Using configured server IP: $serverIp")
         
-        Log.d(TAG, "Hosting game on IP: $ip and port: $SERVER_PORT")
         _connectionState.value = ConnectionState.Hosting
         
-        // Tạo và khởi động máy chủ WebSocket
         try {
-            // Sử dụng phương thức createServer từ TicToeWebSocketServer
-            val server = TicToeWebSocketServer.createServer(SERVER_PORT, coroutineScope)
-            
-            // Chờ 1 giây để server khởi động
-            coroutineScope.launch {
-                delay(1000)
-                
-                // Connect to the WebSocket server as a client
-                Log.d(TAG, "Server started, connecting as client to our own server")
-                connectToServer(ip, SERVER_PORT)
-                
-                // Thêm IP của thiết bị host vào danh sách các host để thiết bị khác có thể dễ dàng tìm thấy
-                _discoveredHosts.value = listOf(ip)
-            }
+            // Kết nối đến Node.js server
+            Log.d(TAG, "Connecting to Node.js server at $serverIp:$SERVER_PORT")
+            connectToServer(serverIp, SERVER_PORT)
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting WebSocket server: ${e.message}", e)
-            _connectionState.value = ConnectionState.Error("Failed to start game server: ${e.message}")
+            Log.e(TAG, "Error connecting to server: ${e.message}", e)
+            _connectionState.value = ConnectionState.Error("Failed to connect to game server: ${e.message}")
         }
     }
     
     /**
      * Tham gia một game với địa chỉ IP
      */
-    fun joinGame(playerName: String, serverIp: String) {
+    fun joinGame(playerName: String, serverIp: String = SERVER_IP) {
         this.playerName = playerName
         currentGameId = null
         
         Log.d(TAG, "Joining game on server: $serverIp")
         _connectionState.value = ConnectionState.Connecting
         
-        // Connect to the WebSocket server
+        // Kết nối đến server
         connectToServer(serverIp, SERVER_PORT)
     }
     
@@ -131,114 +121,32 @@ class OnlineGameRepository(
      * Tìm kiếm các máy chủ trong mạng LAN
      */
     fun discoverHosts() {
-        if (isScanning.getAndSet(true)) {
-            Log.d(TAG, "Already scanning for hosts")
-            return
-        }
+        // Thay vì quét mạng, kết nối trực tiếp đến server
+        Log.d(TAG, "Skipping host scanning, connecting directly to fixed server: $SERVER_IP")
         
-        _discoveredHosts.value = emptyList()
+        // Thêm server cố định vào danh sách
+        val hosts = listOf(SERVER_IP)
+        _discoveredHosts.value = hosts
         
-        coroutineScope.launch(Dispatchers.IO) {
-            try {
-                val baseIp = getLocalIpPrefix()
-                if (baseIp == null) {
-                    _connectionState.value = ConnectionState.Error("Could not get local IP address")
-                    isScanning.set(false)
-                    return@launch
-                }
-                
-                Log.d(TAG, "Starting LAN scan with base IP: $baseIp")
-                
-                val foundHosts = java.util.Collections.synchronizedList(mutableListOf<String>())
-                val hostRange = 1..254
-                val batchSize = 25 // Process hosts in batches
-                val batches = hostRange.chunked(batchSize)
-                
-                // Add device's own IP for testing on same device
-                val ownIp = getLocalIpAddress()
-                if (ownIp != null) {
-                    Log.d(TAG, "Adding device's own IP to scan results for testing: $ownIp")
-                    foundHosts.add(ownIp)
-                    _discoveredHosts.value = foundHosts.toList()
-                }
-                
-                // Scan specific IPs first that are likely to be devices
-                val commonLastOctets = listOf(1, 100, 101, 102, 103, 104, 105, 2, 254)
-                commonLastOctets.forEach { i ->
-                    val hostToCheck = "$baseIp$i"
-                    
-                    try {
-                        Log.d(TAG, "Checking common host: $hostToCheck")
-                        if (isWebSocketServerRunning(hostToCheck, SERVER_PORT)) {
-                            Log.d(TAG, "Found WebSocket server at: $hostToCheck")
-                            synchronized(foundHosts) {
-                                if (!foundHosts.contains(hostToCheck)) {
-                                    foundHosts.add(hostToCheck)
-                                    _discoveredHosts.value = foundHosts.toList()
-                                }
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.d(TAG, "Error checking host $hostToCheck: ${e.message}")
-                    }
-                }
-                
-                // Create jobs for each batch of IPs
-                val jobs = batches.map { batch ->
-                    coroutineScope.launch(Dispatchers.IO) {
-                        for (i in batch) {
-                            // Skip already checked common IPs
-                            if (commonLastOctets.contains(i)) continue
-                            
-                            val hostToCheck = "$baseIp$i"
-                            
-                            try {
-                                Log.d(TAG, "Checking host: $hostToCheck")
-                                if (isWebSocketServerRunning(hostToCheck, SERVER_PORT)) {
-                                    Log.d(TAG, "Found WebSocket server at: $hostToCheck")
-                                    synchronized(foundHosts) {
-                                        if (!foundHosts.contains(hostToCheck)) {
-                                            foundHosts.add(hostToCheck)
-                                            _discoveredHosts.value = foundHosts.toList()
-                                        }
-                                    }
-                                } else {
-                                    Log.d(TAG, "No server at: $hostToCheck")
-                                }
-                            } catch (e: Exception) {
-                                // Ignore errors for individual hosts
-                                Log.d(TAG, "Error checking host $hostToCheck: ${e.message}")
-                            }
-                        }
-                    }
-                }
-                
-                // Wait for all scans to complete
-                jobs.forEach { it.join() }
-                
-                if (foundHosts.isEmpty()) {
-                    Log.d(TAG, "No WebSocket servers found on LAN")
-                } else {
-                    Log.d(TAG, "Finished LAN scan, found ${foundHosts.size} servers")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error scanning for hosts", e)
-                _connectionState.value = ConnectionState.Error("Error scanning for hosts: ${e.message}")
-            } finally {
-                isScanning.set(false)
-            }
+        // Kết nối trực tiếp đến server cố định
+        try {
+            Log.d(TAG, "Connecting directly to server at $SERVER_IP:$SERVER_PORT")
+            connectToServer(SERVER_IP, SERVER_PORT)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error connecting to server: ${e.message}", e)
+            _connectionState.value = ConnectionState.Error("Failed to connect to game server: ${e.message}")
         }
     }
     
     /**
-     * Kiểm tra xem có WebSocket server đang chạy tại địa chỉ và cổng chỉ định
+     * Kiểm tra xem có Socket.IO server đang chạy tại địa chỉ và cổng chỉ định
      */
     private fun isWebSocketServerRunning(host: String, port: Int): Boolean {
         return try {
-            Log.d(TAG, "Checking server at: $host:$port")
+            Log.d(TAG, "Checking Socket.IO server at: $host:$port")
             val socket = java.net.Socket()
-            // Tăng timeout lên 3000ms để có thời gian phát hiện tốt hơn trên mạng chậm
-            socket.connect(java.net.InetSocketAddress(host, port), 3000)
+            // Giảm timeout xuống để phản hồi nhanh hơn
+            socket.connect(java.net.InetSocketAddress(host, port), 1000)
             
             // Kiểm tra xem kết nối có thực sự thành công
             val connected = socket.isConnected
@@ -248,17 +156,17 @@ class OnlineGameRepository(
             socket.close()
             
             if (connected) {
-                Log.d(TAG, "Server is running at: $host:$port")
+                Log.d(TAG, "Socket.IO server is running at: $host:$port")
                 true
             } else {
-                Log.d(TAG, "Unable to connect to server at: $host:$port")
+                Log.d(TAG, "Unable to connect to Socket.IO server at: $host:$port")
                 false
             }
         } catch (e: IOException) {
-            Log.d(TAG, "No server at: $host:$port - ${e.message}")
+            Log.d(TAG, "No Socket.IO server at: $host:$port - ${e.message}")
             false
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking server at: $host:$port", e)
+            Log.e(TAG, "Error checking Socket.IO server at: $host:$port", e)
             false
         }
     }
@@ -328,67 +236,151 @@ class OnlineGameRepository(
     }
     
     /**
-     * Kết nối đến WebSocket server
+     * Tạo kết nối đến máy chủ
      */
     private fun connectToServer(serverIp: String, port: Int) {
+        // Validate input parameters
+        if (serverIp.isNullOrEmpty()) {
+            Log.e(TAG, "Cannot connect to server: Server IP is null or empty")
+            _connectionState.value = ConnectionState.Error("Invalid server IP")
+            return
+        }
+        
+        if (port <= 0) {
+            Log.e(TAG, "Cannot connect to server: Invalid port number $port")
+            _connectionState.value = ConnectionState.Error("Invalid port number")
+            return
+        }
+
+        Log.d(TAG, "########## Connecting to server: $serverIp:$port ##########")
+        
+        // Đóng kết nối hiện tại nếu có
         try {
-            Log.d(TAG, "Attempting to connect to WebSocket server at $serverIp:$port")
-            webSocketClient = TicToeWebSocketClient.createClient(serverIp, port, "", coroutineScope)
-            
-            // Collect connection events
-            coroutineScope.launch {
-                try {
-                    webSocketClient?.connectionFlow?.collectLatest { event ->
-                        handleConnectionEvent(event)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error collecting connection events: ${e.message}", e)
-                    _connectionState.value = ConnectionState.Error("Connection error: ${e.message}")
-                }
-            }
-            
-            // Collect message events
-            coroutineScope.launch {
-                try {
-                    webSocketClient?.messageFlow?.collectLatest { message ->
-                        handleWebSocketMessage(message)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error collecting message events: ${e.message}", e)
-                }
-            }
-            
-            // Cố gắng kết nối với thời gian chờ dài hơn
-            coroutineScope.launch {
-                try {
-                    Log.d(TAG, "Connecting to WebSocket server with timeout")
-                    // Tăng timeout lên 15 giây để có nhiều thời gian kết nối hơn
-                    val connected = webSocketClient?.connectBlocking(15000, java.util.concurrent.TimeUnit.MILLISECONDS)
-                    
-                    if (connected != true) {
-                        Log.e(TAG, "Failed to connect to WebSocket server within timeout")
-                        _connectionState.value = ConnectionState.Error("Connection timeout")
-                    } else {
-                        Log.d(TAG, "Successfully connected to WebSocket server")
-                        // Start matchmaking timeout
-                        startMatchmakingTimeout()
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error connecting to WebSocket server: ${e.message}", e)
-                    _connectionState.value = ConnectionState.Error("Connection error: ${e.message}")
-                    webSocketClient?.close()
-                }
+            if (socketManager != null) {
+                Log.d(TAG, "Closing existing connection")
+                socketManager?.release()
+                socketManager = null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating WebSocket client: ${e.message}", e)
+            Log.e(TAG, "Error closing existing connection: ${e.message}", e)
+        }
+        
+        // Tạo kết nối mới
+        try {
+            Log.d(TAG, "########## Creating SocketIOManager for $serverIp:$port ##########")
+            socketManager = SocketIOManager.create(serverIp, port, "", coroutineScope)
+            
+            // Đăng ký lắng nghe sự kiện kết nối
+            coroutineScope.launch {
+                socketManager?.connectionFlow?.collectLatest { event ->
+                    Log.d(TAG, "########## Received connection event: $event ##########")
+                    when (event) {
+                        is ConnectionEvent.Connected -> {
+                            Log.d(TAG, "########## CONNECTED to server $serverIp:$port ##########")
+                            _connectionState.value = ConnectionState.Connected
+                            
+                            // Gửi tin nhắn kết nối với tên người chơi
+                            sendConnectMessage()
+                        }
+                        
+                        is ConnectionEvent.Disconnected -> {
+                            Log.d(TAG, "########## DISCONNECTED from server: ${event.reason} ##########")
+                            _connectionState.value = ConnectionState.Disconnected
+                            _gameState.value = null
+                        }
+                        
+                        is ConnectionEvent.Error -> {
+                            Log.e(TAG, "########## CONNECTION ERROR: ${event.message} ##########")
+                            _connectionState.value = ConnectionState.Error(event.message)
+                        }
+                        
+                        is ConnectionEvent.Reconnecting -> {
+                            Log.d(TAG, "########## RECONNECTING to server, attempt: ${event.attempt} ##########")
+                            _connectionState.value = ConnectionState.Connecting
+                        }
+                    }
+                }
+            }
+            
+            // Đăng ký lắng nghe tin nhắn từ máy chủ
+            coroutineScope.launch {
+                socketManager?.messageFlow?.collectLatest { message ->
+                    Log.d(TAG, "########## Received WebSocket message: ${message::class.java.simpleName} ##########")
+                    handleWebSocketMessage(message)
+                }
+            }
+            
+            // Khởi tạo kết nối
+            Log.d(TAG, "########## STARTING connection to $serverIp:$port ##########")
+            socketManager?.connect()
+            
+            // Thiết lập timeout cho matchmaking
+            startMatchmakingTimeoutJob()
+        } catch (e: Exception) {
+            Log.e(TAG, "########## ERROR connecting to server $serverIp:$port: ${e.message} ##########", e)
             _connectionState.value = ConnectionState.Error("Failed to connect: ${e.message}")
         }
     }
     
     /**
+     * Đóng kết nối
+     */
+    fun disconnect() {
+        matchmakingTimeoutJob?.cancel()
+        socketManager?.disconnect()
+        socketManager = null
+
+        _connectionState.value = ConnectionState.Disconnected
+        _gameState.value = null
+    }
+    
+    /**
+     * Gửi tin nhắn kết nối
+     */
+    private fun sendConnectMessage() {
+        val connectMessage = ConnectMessage(
+            playerName = playerName,
+            requestGameId = currentGameId
+        )
+        
+        socketManager?.sendMessage(connectMessage)
+    }
+    
+    /**
+     * Gửi nước đi
+     */
+    fun sendMove(row: Int, col: Int) {
+        val gameId = currentGameId ?: return
+        
+        val moveMessage = MoveMessage(
+            gameId = gameId,
+            playerName = playerName,
+            row = row,
+            col = col
+        )
+        
+        socketManager?.sendMessage(moveMessage)
+    }
+    
+    /**
+     * Gửi tin nhắn chat
+     */
+    fun sendChatMessage(message: String) {
+        val gameId = currentGameId ?: return
+        
+        val chatMessage = ChatMessage(
+            gameId = gameId,
+            playerName = playerName,
+            message = message
+        )
+        
+        socketManager?.sendMessage(chatMessage)
+    }
+    
+    /**
      * Start the matchmaking timeout, which will trigger an error if no match is found
      */
-    private fun startMatchmakingTimeout() {
+    private fun startMatchmakingTimeoutJob() {
         // Cancel any existing timeout job
         matchmakingTimeoutJob?.cancel()
         
@@ -401,45 +393,6 @@ class OnlineGameRepository(
             if (currentGameState == null || currentGameState.gameStatus == GameStatus.WAITING_OPPONENT) {
                 Log.d(TAG, "Matchmaking timeout reached")
                 _connectionState.value = ConnectionState.Error("No opponent found after waiting")
-            }
-        }
-    }
-    
-    /**
-     * Xử lý các sự kiện kết nối
-     */
-    private fun handleConnectionEvent(event: ConnectionEvent) {
-        when (event) {
-            is ConnectionEvent.Connected -> {
-                Log.d(TAG, "Connected to WebSocket server")
-                
-                // Send connect message with player name
-                val connectMessage = ConnectMessage(
-                    playerName = playerName,
-                    requestGameId = currentGameId
-                )
-                webSocketClient?.sendMessage(connectMessage)
-                
-                _connectionState.value = ConnectionState.Connected
-            }
-            is ConnectionEvent.Disconnected -> {
-                Log.d(TAG, "Disconnected from WebSocket server: ${event.code}, ${event.reason}")
-                _connectionState.value = ConnectionState.Disconnected
-                _gameState.value = null
-                
-                // Cancel matchmaking timeout
-                matchmakingTimeoutJob?.cancel()
-            }
-            is ConnectionEvent.Error -> {
-                Log.e(TAG, "WebSocket error: ${event.message}")
-                _connectionState.value = ConnectionState.Error(event.message)
-                
-                // Cancel matchmaking timeout
-                matchmakingTimeoutJob?.cancel()
-            }
-            is ConnectionEvent.Reconnecting -> {
-                Log.d(TAG, "Reconnecting to WebSocket server (attempt ${event.attempt})")
-                _connectionState.value = ConnectionState.Reconnecting(event.attempt)
             }
         }
     }
@@ -484,58 +437,6 @@ class OnlineGameRepository(
                 Log.d(TAG, "Player disconnected: ${message.playerName}, reason: ${message.reason}")
             }
         }
-    }
-    
-    /**
-     * Gửi nước đi đến server
-     */
-    fun makeMove(row: Int, col: Int) {
-        val gameId = currentGameId ?: return
-        
-        val moveMessage = MoveMessage(
-            gameId = gameId,
-            playerName = playerName,
-            row = row,
-            col = col
-        )
-        webSocketClient?.sendMessage(moveMessage)
-    }
-    
-    /**
-     * Gửi tin nhắn chat
-     */
-    fun sendChat(message: String) {
-        val gameId = currentGameId ?: return
-        
-        val chatMessage = ChatMessage(
-            gameId = gameId,
-            playerName = playerName,
-            message = message
-        )
-        webSocketClient?.sendMessage(chatMessage)
-    }
-    
-    /**
-     * Ngắt kết nối từ server
-     */
-    fun disconnect() {
-        val gameId = currentGameId
-        if (gameId != null) {
-            val disconnectMessage = DisconnectMessage(
-                gameId = gameId,
-                playerName = playerName
-            )
-            webSocketClient?.sendMessage(disconnectMessage)
-        }
-        
-        // Cancel matchmaking timeout
-        matchmakingTimeoutJob?.cancel()
-        
-        webSocketClient?.close()
-        webSocketClient = null
-        currentGameId = null
-        _connectionState.value = ConnectionState.Disconnected
-        _gameState.value = null
     }
     
     // Add a parameter to set the player name
