@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.ksp.plug)
 }
 
 android {
@@ -70,6 +71,11 @@ dependencies {
     
     // Gson for JSON serialization/deserialization
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // Room database
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)

@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import org.java_websocket.WebSocket
 import org.java_websocket.handshake.ClientHandshake
 import org.java_websocket.server.WebSocketServer
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.util.UUID
@@ -318,7 +319,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
         // Send room list response
         val roomListData = JSONObject().apply {
             put("type", "ROOM_LIST")
-            put("rooms", gson.toJson(roomInfoList))
+            put("rooms", JSONArray(gson.toJson(roomInfoList)))
             put("timestamp", System.currentTimeMillis())
         }
         
@@ -366,7 +367,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
         
         val roomUpdateData = JSONObject().apply {
             put("type", "ROOM_UPDATE")
-            put("room", gson.toJson(roomInfo))
+            put("room", JSONObject(gson.toJson(roomInfo)))
             put("event", "CREATED")
         }
         
@@ -454,7 +455,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
         
         val roomUpdateData = JSONObject().apply {
             put("type", "ROOM_UPDATE")
-            put("room", gson.toJson(roomInfo))
+            put("room", JSONObject(gson.toJson(roomInfo)))
             put("event", "PLAYER_JOINED")
             put("playerName", playerName)
         }
@@ -485,7 +486,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
         
         val roomUpdateData = JSONObject().apply {
             put("type", "ROOM_UPDATE")
-            put("room", gson.toJson(roomInfo))
+            put("room", JSONObject(gson.toJson(roomInfo)))
             put("event", event)
         }
         
@@ -526,7 +527,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
                         
                         val hostChangeData = JSONObject().apply {
                             put("type", "ROOM_UPDATE")
-                            put("room", gson.toJson(roomInfo))
+                            put("room", JSONObject(gson.toJson(roomInfo)))
                             put("event", "HOST_CHANGED")
                         }
                         
@@ -550,7 +551,7 @@ class TicTacToeServer(port: Int) : WebSocketServer(InetSocketAddress(port)) {
                     
                     val playerLeftData = JSONObject().apply {
                         put("type", "ROOM_UPDATE")
-                        put("room", gson.toJson(roomInfo))
+                        put("room", JSONObject(gson.toJson(roomInfo)))
                         put("event", "PLAYER_LEFT")
                         put("playerName", player.name)
                     }
