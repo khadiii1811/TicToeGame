@@ -18,9 +18,13 @@ sealed class WebSocketMessage(
          * Convert JSON string to message object
          */
         fun fromJson(json: String): WebSocketMessage? {
+            if (json.isNullOrEmpty()) {
+                return null
+            }
+            
             return try {
                 // Read message type
-                val mapType = gson.fromJson(json, Map::class.java)
+                val mapType = gson.fromJson(json, Map::class.java) ?: return null
                 val type = mapType["type"]?.toString() ?: return null
 
                 // Parse message based on type

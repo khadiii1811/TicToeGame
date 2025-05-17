@@ -47,6 +47,15 @@ class SocketIOManager(
      */
     private fun initializeSocket() {
         try {
+            // Verify that serverUrl is not null or empty
+            if (serverUrl.isNullOrEmpty()) {
+                Log.e(tag, "Error initializing Socket.IO client: Server URL is null or empty")
+                coroutineScope.launch {
+                    _connectionFlow.emit(ConnectionEvent.Error("Invalid server URL: empty or null"))
+                }
+                return
+            }
+            
             val options = IO.Options()
             options.reconnection = true
             options.reconnectionAttempts = 5
@@ -156,7 +165,7 @@ class SocketIOManager(
      * On disconnect listener
      */
     private val onDisconnect = Emitter.Listener { args ->
-        val reason = if (args.isNotEmpty() && args[0] is String) args[0] as String else "Unknown reason"
+        val reason = if (args != null && args.isNotEmpty() && args[0] is String) args[0] as String else "Unknown reason"
         Log.d(tag, "######## Socket.IO DISCONNECTED from $serverUrl: $reason ########")
         coroutineScope.launch {
             _connectionFlow.emit(ConnectionEvent.Disconnected(0, reason))
@@ -167,9 +176,9 @@ class SocketIOManager(
      * On connect error listener
      */
     private val onConnectError = Emitter.Listener { args ->
-        val error = if (args.isNotEmpty() && args[0] is Exception) {
+        val error = if (args != null && args.isNotEmpty() && args[0] is Exception) {
             (args[0] as Exception).message ?: "Unknown error"
-        } else if (args.isNotEmpty()) {
+        } else if (args != null && args.isNotEmpty()) {
             args[0].toString()
         } else {
             "Unknown error"
@@ -184,7 +193,7 @@ class SocketIOManager(
      * On game message listener
      */
     private val onGameMessage = Emitter.Listener { args ->
-        if (args.isEmpty() || args[0] !is JSONObject) {
+        if (args == null || args.isEmpty() || args[0] !is JSONObject) {
             Log.e(tag, "Received invalid game message")
             return@Listener
         }
@@ -212,6 +221,15 @@ class SocketIOManager(
          * Create a new Socket.IO manager
          */
         fun create(host: String, port: Int, path: String = "", coroutineScope: CoroutineScope): SocketIOManager {
+            // Validate parameters
+            if (host.isNullOrEmpty()) {
+                throw IllegalArgumentException("Host cannot be null or empty")
+            }
+            
+            if (port <= 0) {
+                throw IllegalArgumentException("Port must be a positive number")
+            }
+            
             val url = "http://$host:$port${if (path.isNotEmpty()) "/$path" else ""}"
             Log.d("SocketIOManager", "Creating new Socket.IO manager with URL: $url")
             return SocketIOManager(url, coroutineScope)

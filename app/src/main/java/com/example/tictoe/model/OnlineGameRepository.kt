@@ -239,6 +239,19 @@ class OnlineGameRepository(
      * Tạo kết nối đến máy chủ
      */
     private fun connectToServer(serverIp: String, port: Int) {
+        // Validate input parameters
+        if (serverIp.isNullOrEmpty()) {
+            Log.e(TAG, "Cannot connect to server: Server IP is null or empty")
+            _connectionState.value = ConnectionState.Error("Invalid server IP")
+            return
+        }
+        
+        if (port <= 0) {
+            Log.e(TAG, "Cannot connect to server: Invalid port number $port")
+            _connectionState.value = ConnectionState.Error("Invalid port number")
+            return
+        }
+
         Log.d(TAG, "########## Connecting to server: $serverIp:$port ##########")
         
         // Đóng kết nối hiện tại nếu có
