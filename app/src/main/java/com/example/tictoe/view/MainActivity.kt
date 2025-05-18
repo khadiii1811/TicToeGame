@@ -164,9 +164,13 @@ class MainActivity : ComponentActivity() {
                             },
                             onJoinRoom = { serverIp ->
                                 soundManager.playClickSound()
-                                // Tham gia phòng với IP đã chọn
-                                onlineGameRepository.joinGame(username, serverIp)
+                                
+                                // Chuyển đến màn hình matching mà không khởi tạo lại kết nối
+                                // onlineGameRepository.joinGame() đã được gọi trong AvailableRoomsScreen
                                 menuViewModel.navigateToOnlineMatching()
+                                
+                                // Ghi log để debug
+                                Log.d("TicToe", "Navigating to matching screen after joining room")
                             },
                             repository = onlineGameRepository
                         )

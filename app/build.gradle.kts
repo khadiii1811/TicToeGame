@@ -68,7 +68,7 @@ dependencies {
     
     // OkHttp for WebSocket client
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
-    
+
     // Gson for JSON serialization/deserialization
     implementation("com.google.code.gson:gson:2.10.1")
 
