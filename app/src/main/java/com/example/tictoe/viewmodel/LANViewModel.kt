@@ -207,17 +207,23 @@ class LANViewModel : ViewModel() {
 
     // Handle received network message
     private fun handleMessage(message: String, isHost: Boolean) {
+        Log.d("LANViewModel", "Handling message: $message, isHost=$isHost")
         when (val parsed = parseMessage(message)) {
             is Pair<*, *> -> {
                 val row = parsed.first as? Int ?: return
                 val col = parsed.second as? Int ?: return
+                Log.d("LANViewModel", "Received move: row=$row, col=$col")
                 gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
                 _isPlayerTurn.value = true
+                Log.d("LANViewModel", "Turn changed to this player")
+                soundManager?.playClickSound()
             }
             is String -> {
+                Log.d("LANViewModel", "Received player name: $parsed")
                 // This is likely a player name
                 _opponentName.value = parsed
                 val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                Log.d("LANViewModel", "Sending player name: $nameMsg")
                 if (isHost) {
                     gameServer?.send(nameMsg)
                 } else {
@@ -226,14 +232,16 @@ class LANViewModel : ViewModel() {
                 _isConnected.value = true
             }
             MSG_DISCONNECT -> {
+                Log.d("LANViewModel", "Received disconnect message")
                 _isConnected.value = false
                 disconnect()
             }
             MSG_REMATCH -> {
-                // Handle other message types if needed
+                Log.d("LANViewModel", "Received rematch message")
+                // Handle rematch message if needed
             }
             else -> {
-                // Fallback for unrecognized messages
+                Log.d("LANViewModel", "Received unknown message type")
             }
         }
     }
@@ -256,22 +264,27 @@ class LANViewModel : ViewModel() {
 
     // Send a move to opponent
     fun sendMove(row: Int, col: Int) {
-        val msg = "MOVE:$row,$col"
+        val moveMsg = moveToMessage(Pair(row, col))
+        Log.d("LANViewModel", "Sending move: $moveMsg, isHost=${_isHosting.value}")
         if (_isHosting.value) {
-            gameServer?.send(msg)
+            gameServer?.send(moveMsg)
         } else {
-            gameClient?.send(msg)
+            gameClient?.send(moveMsg)
         }
         _isPlayerTurn.value = false
+        Log.d("LANViewModel", "Turn changed to opponent")
+        soundManager?.playClickSound()
     }
 
     // Called when player makes a local move
     fun onLocalMove(row: Int, col: Int) {
+        Log.d("LANViewModel", "onLocalMove: row=$row, col=$col, isPlayerTurn=${_isPlayerTurn.value}")
         if (_isPlayerTurn.value) {
             // Update local board
             gameViewModel?.makeMoveLAN(row, col, symbol)
+            Log.d("LANViewModel", "Local move made with symbol: $symbol")
+            // Send move to opponent
             sendMove(row, col)
-            _isPlayerTurn.value = false
         }
     }
 }
