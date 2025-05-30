@@ -154,7 +154,7 @@ fun GameBoardScreen(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // Players' stats row
-                        if (lanViewModel != null) {
+                        if (lanViewModel?.isConnected?.value == true) {
                                 GlassCard(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
@@ -269,7 +269,7 @@ fun GameBoardScreen(
                                                 }
                                         }
 
-                                        if (lanViewModel != null && !lanViewModel.isPlayerTurn) {
+                                        if (lanViewModel?.isConnected?.value == true && !lanViewModel.isPlayerTurn) {
                                                 Text(
                                                         text = "Opponent Thinking...",
                                                         color = AppColors.AccentYellow,
