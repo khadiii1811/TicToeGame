@@ -8,6 +8,8 @@ import com.example.tictoe.LAN.*
 import com.example.tictoe.model.SoundManager
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class LANViewModel : ViewModel() {
     // Room StateFlows
@@ -109,8 +111,12 @@ class LANViewModel : ViewModel() {
                         if (message is String) handleMessage(message, isHost = true)
                     },
                     onClientConnected = {
-                        _myRoom.update { it?.copy(status = "playing") }
-                        _isConnected.update { true }
+                        viewModelScope.launch(Dispatchers.Main) {
+                            _myRoom.update { it?.copy(status = "playing") }
+                            _isConnected.value = true
+                            // Gửi tên của mình cho client
+                            gameServer?.send("${MSG_PLAYER_NAME} ${_playerName.value}")
+                        }
                     }
             )
         } catch (e: Exception) {
@@ -175,24 +181,15 @@ class LANViewModel : ViewModel() {
                         if (message is String) handleMessage(message, isHost = false)
                     },
                     onConnected = {
-                        // Handle successful connection (e.g., update status to "playing")
-                        symbol = "O"
-                        _isConnected.value = true
-                        _isPlayerTurn.value = false // guest plays second
-
-                        // Optionally update the room status in your list
-                        _availableRooms.update { rooms ->
-                            rooms.map {
-                                if (it.host == room.host && it.port == room.port)
-                                        it.copy(status = "playing")
-                                else it
-                            }
+                        viewModelScope.launch(Dispatchers.Main) {
+                            symbol = "O"
+                            _isConnected.value = true
+                            _isPlayerTurn.value = false // guest plays second
+                            // Gửi tên của mình cho host
+                            gameClient?.send("${MSG_PLAYER_NAME} ${_playerName.value}")
                         }
                     }
             )
-            gameClient = client
-            _isConnected.value = true
-            _isPlayerTurn.value = false // guest plays second
         } catch (e: Exception) {
             Log.e("LANViewModel_Client", "Error connecting to room: ${e.message}")
             gameClient?.disconnect()
@@ -210,47 +207,52 @@ class LANViewModel : ViewModel() {
     // Handle received network message
     private fun handleMessage(message: String, isHost: Boolean) {
         Log.d("LANViewModel", "Handling message: $message, isHost=$isHost")
-        when (val parsed = parseMessage(message)) {
-            is Pair<*, *> -> {
-                val row = parsed.first as? Int ?: return
-                val col = parsed.second as? Int ?: return
-                Log.d("LANViewModel", "Received move: row=$row, col=$col")
-                
-                // Cập nhật UI trên main thread
-                viewModelScope.launch {
-                    gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
-                    _isPlayerTurn.value = true
-                    soundManager?.playClickSound()
-                    Log.d("LANViewModel", "Updated game state after receiving move")
-                }
-            }
-            is String -> {
-                Log.d("LANViewModel", "Received player name: $parsed")
-                viewModelScope.launch {
-                    _opponentName.value = parsed
-                    val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
-                    Log.d("LANViewModel", "Sending player name: $nameMsg")
-                    if (isHost) {
-                        gameServer?.send(nameMsg)
-                    } else {
-                        gameClient?.send(nameMsg)
+        viewModelScope.launch(Dispatchers.Main) {
+            when (val parsed = parseMessage(message)) {
+                is Pair<*, *> -> {
+                    when (parsed.first) {
+                        is Int -> {
+                            // Đây là nước đi
+                            val row = parsed.first as Int
+                            val col = parsed.second as Int
+                            Log.d("LANViewModel", "Received move: row=$row, col=$col")
+                            
+                            // Cập nhật game state
+                            gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
+                            _isPlayerTurn.value = true
+                            soundManager?.playClickSound()
+                            Log.d("LANViewModel", "Updated game state after receiving move")
+                        }
+                        MSG_PLAYER_NAME -> {
+                            // Đây là tin nhắn tên người chơi
+                            val playerName = parsed.second as String
+                            Log.d("LANViewModel", "Setting opponent name to: $playerName")
+                            _opponentName.value = playerName
+                            
+                            // Gửi lại tên của mình
+                            val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                            Log.d("LANViewModel", "Sending back player name: $nameMsg")
+                            if (isHost) {
+                                gameServer?.send(nameMsg)
+                            } else {
+                                gameClient?.send(nameMsg)
+                            }
+                        }
                     }
                     _isConnected.value = true
                 }
-            }
-            MSG_DISCONNECT -> {
-                viewModelScope.launch {
+                MSG_DISCONNECT -> {
                     Log.d("LANViewModel", "Received disconnect message")
                     _isConnected.value = false
                     disconnect()
                 }
-            }
-            MSG_REMATCH -> {
-                Log.d("LANViewModel", "Received rematch message")
-                // Handle rematch message if needed
-            }
-            else -> {
-                Log.d("LANViewModel", "Received unknown message type")
+                MSG_REMATCH -> {
+                    Log.d("LANViewModel", "Received rematch message")
+                    // Handle rematch message if needed
+                }
+                else -> {
+                    Log.d("LANViewModel", "Received unknown message type")
+                }
             }
         }
     }
@@ -273,14 +275,16 @@ class LANViewModel : ViewModel() {
 
     // Send a move to opponent
     fun sendMove(row: Int, col: Int) {
-        val moveMsg = moveToMessage(Pair(row, col))
-        Log.d("LANViewModel", "Sending move: $moveMsg, isHost=${_isHosting.value}")
-        if (_isHosting.value) {
-            gameServer?.send(moveMsg)
-        } else {
-            gameClient?.send(moveMsg)
-        }
         viewModelScope.launch {
+            val moveMsg = moveToMessage(Pair(row, col))
+            Log.d("LANViewModel", "Sending move: $moveMsg, isHost=${_isHosting.value}")
+            withContext(Dispatchers.IO) {
+                if (_isHosting.value) {
+                    gameServer?.send(moveMsg)
+                } else {
+                    gameClient?.send(moveMsg)
+                }
+            }
             _isPlayerTurn.value = false
             soundManager?.playClickSound()
             Log.d("LANViewModel", "Updated local state after sending move")
@@ -291,7 +295,7 @@ class LANViewModel : ViewModel() {
     fun onLocalMove(row: Int, col: Int) {
         Log.d("LANViewModel", "onLocalMove: row=$row, col=$col, isPlayerTurn=${_isPlayerTurn.value}")
         if (_isPlayerTurn.value) {
-            viewModelScope.launch {
+            viewModelScope.launch(Dispatchers.Main) {
                 // Update local board
                 gameViewModel?.makeMoveLAN(row, col, symbol)
                 Log.d("LANViewModel", "Local move made with symbol: $symbol")
