@@ -185,8 +185,11 @@ class LANViewModel : ViewModel() {
                             symbol = "O"
                             _isConnected.value = true
                             _isPlayerTurn.value = false // guest plays second
-                            // Gửi tên của mình cho host
-                            gameClient?.send("${MSG_PLAYER_NAME} ${_playerName.value}")
+                            
+                            // Gửi tên ngay khi kết nối thành công
+                            val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                            Log.d("LANViewModel", "Client sending player name on connect: $nameMsg")
+                            gameClient?.send(nameMsg)
                         }
                     }
             )
@@ -217,11 +220,17 @@ class LANViewModel : ViewModel() {
                             val col = parsed.second as Int
                             Log.d("LANViewModel", "Received move: row=$row, col=$col")
                             
-                            // Cập nhật game state
-                            gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
-                            _isPlayerTurn.value = true
-                            soundManager?.playClickSound()
-                            Log.d("LANViewModel", "Updated game state after receiving move")
+                            // Xác định symbol của đối thủ
+                            val opponentSymbol = if (symbol == "X") "O" else "X"
+                            Log.d("LANViewModel", "Making move with opponent symbol: $opponentSymbol")
+                            
+                            // Cập nhật game state và UI
+                            withContext(Dispatchers.Main) {
+                                gameViewModel?.makeMoveLAN(row, col, opponentSymbol)
+                                _isPlayerTurn.value = true
+                                soundManager?.playClickSound()
+                                Log.d("LANViewModel", "Updated game state after receiving move. isPlayerTurn set to true")
+                            }
                         }
                         MSG_PLAYER_NAME -> {
                             // Đây là tin nhắn tên người chơi
@@ -229,13 +238,15 @@ class LANViewModel : ViewModel() {
                             Log.d("LANViewModel", "Setting opponent name to: $playerName")
                             _opponentName.value = playerName
                             
-                            // Gửi lại tên của mình
-                            val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
-                            Log.d("LANViewModel", "Sending back player name: $nameMsg")
-                            if (isHost) {
-                                gameServer?.send(nameMsg)
-                            } else {
+                            // Gửi lại tên của mình nếu chưa gửi
+                            if (_opponentName.value != null && !isHost) {
+                                val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                                Log.d("LANViewModel", "Sending back player name: $nameMsg")
                                 gameClient?.send(nameMsg)
+                            } else if (_opponentName.value != null && isHost) {
+                                val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                                Log.d("LANViewModel", "Host sending back player name: $nameMsg")
+                                gameServer?.send(nameMsg)
                             }
                         }
                     }
@@ -251,7 +262,7 @@ class LANViewModel : ViewModel() {
                     // Handle rematch message if needed
                 }
                 else -> {
-                    Log.d("LANViewModel", "Received unknown message type")
+                    Log.d("LANViewModel", "Received unknown message type: $message")
                 }
             }
         }
@@ -293,7 +304,7 @@ class LANViewModel : ViewModel() {
 
     // Called when player makes a local move
     fun onLocalMove(row: Int, col: Int) {
-        Log.d("LANViewModel", "onLocalMove: row=$row, col=$col, isPlayerTurn=${_isPlayerTurn.value}")
+        Log.d("LANViewModel", "onLocalMove: row=$row, col=$col, isPlayerTurn=${_isPlayerTurn.value}, symbol=$symbol")
         if (_isPlayerTurn.value) {
             viewModelScope.launch(Dispatchers.Main) {
                 // Update local board
