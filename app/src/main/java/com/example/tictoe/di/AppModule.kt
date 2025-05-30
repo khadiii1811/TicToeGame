@@ -7,6 +7,7 @@ import com.example.tictoe.model.OnlineGameRepository
 import com.example.tictoe.model.StatsRepository
 import com.example.tictoe.model.SoundManager
 import com.example.tictoe.viewmodel.GameViewModel
+import com.example.tictoe.viewmodel.LANViewModel
 import com.example.tictoe.viewmodel.MenuViewModel
 import com.example.tictoe.viewmodel.SettingsViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -60,5 +61,12 @@ object AppModule {
      */
     fun provideSettingsViewModel(owner: ViewModelStoreOwner): SettingsViewModel {
         return ViewModelProvider(owner)[SettingsViewModel::class.java]
+    }
+
+    /**
+     * Provides LANViewModel instance
+     */
+    fun provideLANViewModel(owner: ViewModelStoreOwner): LANViewModel {
+        return ViewModelProvider(owner)[LANViewModel::class.java]
     }
 } 
