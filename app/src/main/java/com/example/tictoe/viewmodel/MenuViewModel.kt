@@ -91,10 +91,16 @@ class MenuViewModel : ViewModel() {
     }
     
     // Handle when online match is found
-    fun onMatchFound(playerName: String) {
-        Log.d("TicToe", "Match found with player: $playerName")
-        _matchedPlayerName.value = playerName
+    fun onMatchFound(matchedPlayerName: String) {
+        Log.d("TicToe", "Match found with player: $matchedPlayerName")
+        _matchedPlayerName.value = matchedPlayerName
         _isVsBot.value = false
         _currentScreen.value = "game"
+    }
+
+    // Navigate to room mode dialog
+    fun navigateToRoomMode() {
+        Log.d("TicToe", "Navigating to room mode")
+        _currentScreen.value = "room_mode"
     }
 } 
