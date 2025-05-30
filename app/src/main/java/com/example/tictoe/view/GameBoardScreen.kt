@@ -41,7 +41,7 @@ fun GameBoardScreen(
         onPlayAgain: () -> Unit = {},
         isVsBot: Boolean = false,
         gameViewModel: GameViewModel,
-        lanViewModel: LANViewModel? = null
+        lanViewModel: LANViewModel
 ) {
         // Collect state from GameViewModel with safe default values
         val currentTurn by gameViewModel.currentTurn.collectAsState()
@@ -103,7 +103,7 @@ fun GameBoardScreen(
 
         // Wire up LAN ViewModel if provided
         LaunchedEffect(Unit) {
-                lanViewModel?.setOnMoveReceivedCallback { row, col ->
+                lanViewModel.setOnMoveReceivedCallback { row, col ->
                         gameViewModel.makeMove(row, col, isVsBot = false)
                 }
         }
@@ -146,7 +146,7 @@ fun GameBoardScreen(
                         // Header with Back button
                         AppHeader(
                                 title =
-                                        if (lanViewModel != null) "LAN Match"
+                                        if (lanViewModel.isConnected.value) "LAN Match"
                                         else (if (isVsBot) "Play vs Bot" else "Play vs Player"),
                                 onBackClick = onBackClick
                         )
@@ -154,7 +154,7 @@ fun GameBoardScreen(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // Players' stats row
-                        if (lanViewModel != null) {
+                        if (lanViewModel.isConnected.value == true) {
                                 GlassCard(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
@@ -269,7 +269,9 @@ fun GameBoardScreen(
                                                 }
                                         }
 
-                                        if (lanViewModel != null && !lanViewModel.isPlayerTurn) {
+                                        if (lanViewModel.isConnected.value &&
+                                                        !lanViewModel.isPlayerTurn
+                                        ) {
                                                 Text(
                                                         text = "Opponent Thinking...",
                                                         color = AppColors.AccentYellow,
@@ -288,7 +290,7 @@ fun GameBoardScreen(
                                         winningLine = winningCells,
                                         onCellClick = { row, col ->
                                                 if (gameWinner.isEmpty() && !isBotThinking) {
-                                                        if (lanViewModel == null) {
+                                                        if (lanViewModel.isConnected.value) {
                                                                 gameViewModel.makeMove(
                                                                         row,
                                                                         col,
@@ -650,6 +652,11 @@ private fun StatItem(value: String, label: String, icon: ImageVector, color: Col
 fun GameBoardScreenPreview() {
         // Create a preview version of the ViewModel
         val previewViewModel = remember { GameViewModel() }
+        val lanViewModel = remember { LANViewModel() }
 
-        GameBoardScreen(gameViewModel = previewViewModel, isVsBot = true)
+        GameBoardScreen(
+                gameViewModel = previewViewModel,
+                isVsBot = true,
+                lanViewModel = lanViewModel
+        )
 }
