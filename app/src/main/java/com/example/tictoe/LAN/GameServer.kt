@@ -45,26 +45,33 @@ class GameServer {
                     Log.d("GameServer", "Received message: $line")
                 }
             } catch (e: Exception) {
-                Log.e("GameServer", "Error starting server", e)
-                // Optionally, call a failure callback
+                Log.e("GameServer", "Error in server loop: ${e.message}")
             }
         }
     }
 
     /** Send a message to the client */
     fun send(data: Any) {
-        try {
-            val msg = messageToData(data)
-            output?.println(msg)
-            Log.d("GameServer", "Sending message: $msg")
-        } catch (e: Exception) {
-            Log.e("GameServer", "Error sending message", e)
+        thread {
+            try {
+                val msg = messageToData(data)
+                output?.println(msg)
+                output?.flush()
+                Log.d("GameServer", "Sent message: $msg")
+            } catch (e: Exception) {
+                Log.e("GameServer", "Error sending message", e)
+            }
         }
     }
 
     /** Stop the server */
     fun stop() {
-        clientSocket?.close()
-        serverSocket.close()
+        try {
+            clientSocket?.close()
+            serverSocket.close()
+            Log.d("GameServer", "Server stopped")
+        } catch (e: Exception) {
+            Log.e("GameServer", "Error stopping server", e)
+        }
     }
 }
