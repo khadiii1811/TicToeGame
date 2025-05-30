@@ -25,9 +25,14 @@ fun parseMessage(message: String): Any? {
             }
         }
         message.startsWith(MSG_PLAYER_NAME) -> {
-            val name = message.removePrefix("$MSG_PLAYER_NAME ").trim()
-            Log.d("MessageParser", "Parsed player name: $name")
-            name
+            try {
+                val name = message.removePrefix("$MSG_PLAYER_NAME ").trim()
+                Log.d("MessageParser", "Parsed player name: $name")
+                Pair(MSG_PLAYER_NAME, name)
+            } catch (e: Exception) {
+                Log.e("MessageParser", "Error parsing player name: ${e.message}")
+                null
+            }
         }
         message == MSG_REMATCH -> {
             Log.d("MessageParser", "Parsed rematch message")
@@ -47,12 +52,29 @@ fun parseMessage(message: String): Any? {
 fun messageToData(message: Any): String {
     return when (message) {
         is Pair<*, *> -> {
-            val (first, second) = message
-            if (first is Int && second is Int) {
-                moveToMessage(Pair(first, second))
-            } else {
-                Log.e("MessageParser", "Invalid move data: $message")
-                ""
+            when (message.first) {
+                is Int -> {
+                    val (first, second) = message
+                    if (first is Int && second is Int) {
+                        moveToMessage(Pair(first, second))
+                    } else {
+                        Log.e("MessageParser", "Invalid move data: $message")
+                        ""
+                    }
+                }
+                MSG_PLAYER_NAME -> {
+                    val name = message.second as? String
+                    if (name != null) {
+                        "$MSG_PLAYER_NAME $name"
+                    } else {
+                        Log.e("MessageParser", "Invalid player name data: $message")
+                        ""
+                    }
+                }
+                else -> {
+                    Log.e("MessageParser", "Unknown pair type: $message")
+                    ""
+                }
             }
         }
         is String -> message
