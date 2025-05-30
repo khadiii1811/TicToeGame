@@ -39,12 +39,8 @@ class OnlineGameRepository(
         private const val TAG = "OnlineGameRepository"
         private const val DEFAULT_SERVER_PORT = 8887
         private var SERVER_PORT = DEFAULT_SERVER_PORT
-        private const val HOST_SERVER_RANGE = 10 // Tìm kiếm host trong phạm vi 10 địa chỉ IP
-        
-        // Địa chỉ IP máy chủ mặc định
-        // 10.0.2.2 là địa chỉ đặc biệt trong máy ảo Android để truy cập đến máy host
-        // Không cần sử dụng giá trị này nữa vì chúng ta dùng WebSocket server trực tiếp trên thiết bị
-        
+        private const val HOST_SERVER_RANGE = 10
+
         // Lưu lại IP của thiết bị hiện tại
         var currentDeviceIp: String = "unknown"
             private set
