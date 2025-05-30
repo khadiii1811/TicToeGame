@@ -3,9 +3,11 @@ package com.example.tictoe.viewmodel
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.example.tictoe.LAN.*
 import com.example.tictoe.model.SoundManager
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 class LANViewModel : ViewModel() {
     // Room StateFlows
@@ -213,28 +215,35 @@ class LANViewModel : ViewModel() {
                 val row = parsed.first as? Int ?: return
                 val col = parsed.second as? Int ?: return
                 Log.d("LANViewModel", "Received move: row=$row, col=$col")
-                gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
-                _isPlayerTurn.value = true
-                Log.d("LANViewModel", "Turn changed to this player")
-                soundManager?.playClickSound()
+                
+                // Cập nhật UI trên main thread
+                viewModelScope.launch {
+                    gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
+                    _isPlayerTurn.value = true
+                    soundManager?.playClickSound()
+                    Log.d("LANViewModel", "Updated game state after receiving move")
+                }
             }
             is String -> {
                 Log.d("LANViewModel", "Received player name: $parsed")
-                // This is likely a player name
-                _opponentName.value = parsed
-                val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
-                Log.d("LANViewModel", "Sending player name: $nameMsg")
-                if (isHost) {
-                    gameServer?.send(nameMsg)
-                } else {
-                    gameClient?.send(nameMsg)
+                viewModelScope.launch {
+                    _opponentName.value = parsed
+                    val nameMsg = "${MSG_PLAYER_NAME} ${_playerName.value}"
+                    Log.d("LANViewModel", "Sending player name: $nameMsg")
+                    if (isHost) {
+                        gameServer?.send(nameMsg)
+                    } else {
+                        gameClient?.send(nameMsg)
+                    }
+                    _isConnected.value = true
                 }
-                _isConnected.value = true
             }
             MSG_DISCONNECT -> {
-                Log.d("LANViewModel", "Received disconnect message")
-                _isConnected.value = false
-                disconnect()
+                viewModelScope.launch {
+                    Log.d("LANViewModel", "Received disconnect message")
+                    _isConnected.value = false
+                    disconnect()
+                }
             }
             MSG_REMATCH -> {
                 Log.d("LANViewModel", "Received rematch message")
@@ -271,20 +280,24 @@ class LANViewModel : ViewModel() {
         } else {
             gameClient?.send(moveMsg)
         }
-        _isPlayerTurn.value = false
-        Log.d("LANViewModel", "Turn changed to opponent")
-        soundManager?.playClickSound()
+        viewModelScope.launch {
+            _isPlayerTurn.value = false
+            soundManager?.playClickSound()
+            Log.d("LANViewModel", "Updated local state after sending move")
+        }
     }
 
     // Called when player makes a local move
     fun onLocalMove(row: Int, col: Int) {
         Log.d("LANViewModel", "onLocalMove: row=$row, col=$col, isPlayerTurn=${_isPlayerTurn.value}")
         if (_isPlayerTurn.value) {
-            // Update local board
-            gameViewModel?.makeMoveLAN(row, col, symbol)
-            Log.d("LANViewModel", "Local move made with symbol: $symbol")
-            // Send move to opponent
-            sendMove(row, col)
+            viewModelScope.launch {
+                // Update local board
+                gameViewModel?.makeMoveLAN(row, col, symbol)
+                Log.d("LANViewModel", "Local move made with symbol: $symbol")
+                // Send move to opponent
+                sendMove(row, col)
+            }
         }
     }
 }
