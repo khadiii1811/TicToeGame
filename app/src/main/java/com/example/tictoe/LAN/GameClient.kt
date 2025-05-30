@@ -33,7 +33,7 @@ class GameClient(private val host: String, private val port: Int) {
                     Log.d("GameClient", "Received message: $line")
                 }
             } catch (e: IOException) {
-                Log.e("GameClient", "Error connecting to server", e)
+                Log.e("GameClient", "Error in client loop: ${e.message}")
             } finally {
                 // Clean up resources
                 input?.close()
@@ -46,18 +46,26 @@ class GameClient(private val host: String, private val port: Int) {
 
     /** Send a message to the server */
     fun send(data: Any) {
-        try {
-            val msg = messageToData(data)
-            output?.println(msg)
-            Log.d("GameClient", "Sending message: $msg")
-        } catch (e: Exception) {
-            Log.e("GameClient", "Error sending message", e)
+        thread {
+            try {
+                val msg = messageToData(data)
+                output?.println(msg)
+                output?.flush()
+                Log.d("GameClient", "Sent message: $msg")
+            } catch (e: Exception) {
+                Log.e("GameClient", "Error sending message", e)
+            }
         }
     }
 
     /** Disconnect from the server */
     fun disconnect() {
-        output?.println(MSG_DISCONNECT)
-        socket?.close()
+        try {
+            output?.println(MSG_DISCONNECT)
+            socket?.close()
+            Log.d("GameClient", "Disconnected from server")
+        } catch (e: Exception) {
+            Log.e("GameClient", "Error disconnecting", e)
+        }
     }
 }
