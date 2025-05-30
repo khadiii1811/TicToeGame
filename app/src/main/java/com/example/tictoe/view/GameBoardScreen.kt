@@ -29,7 +29,6 @@ import com.example.tictoe.ui.components.*
 import com.example.tictoe.ui.theme.AppColors
 import com.example.tictoe.ui.theme.GlowingBackgroundEffect
 import com.example.tictoe.ui.theme.PulseEffect
-import com.example.tictoe.view.components.*
 import com.example.tictoe.viewmodel.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -54,6 +53,12 @@ fun GameBoardScreen(
         val draws by gameViewModel.draws.collectAsState()
         val losses by gameViewModel.losses.collectAsState()
         val winRate by gameViewModel.winRate.collectAsState()
+
+        // Collect state from LANViewModel with safe default values
+        val playerName by lanViewModel.playerName.collectAsState()
+        val opponentName by lanViewModel.opponentName.collectAsState()
+        val isConnected by lanViewModel.isConnected.collectAsState()
+        val isPlayerTurn by lanViewModel.isPlayerTurn.collectAsState()
 
         // Convert winningLine to List<Pair<Int, Int>> if it's not already
         val winningCells =
@@ -83,6 +88,11 @@ fun GameBoardScreen(
         // Floating particles animation
         val particles = rememberParticles(16)
 
+        // Set GameViewModel in LANViewModel (do this once)
+        LaunchedEffect(Unit) {
+                lanViewModel.setGameViewModel(gameViewModel)
+        }
+
         // Check for game end - show dialog after a short delay
         LaunchedEffect(gameWinner) {
                 if (gameWinner.isEmpty()) return@LaunchedEffect
@@ -103,9 +113,14 @@ fun GameBoardScreen(
 
         // Wire up LAN ViewModel if provided
         LaunchedEffect(Unit) {
-                lanViewModel.setOnMoveReceivedCallback { row, col ->
-                        gameViewModel.makeMove(row, col, isVsBot = false)
-                }
+                lanViewModel.setOnMoveReceivedCallback(
+                        onMove = { row, col ->
+                                gameViewModel.makeMove(row, col, isVsBot = false)
+                        },
+                        onTurnChange = {
+                                lanViewModel.setIsPlayerTurn(true) // Set isPlayerTurn to true
+                        }
+                )
         }
 
         // Initial animations for board and title
@@ -146,7 +161,7 @@ fun GameBoardScreen(
                         // Header with Back button
                         AppHeader(
                                 title =
-                                        if (lanViewModel.isConnected.value) "LAN Match"
+                                        if (isConnected == true) "LAN Match"
                                         else (if (isVsBot) "Play vs Bot" else "Play vs Player"),
                                 onBackClick = onBackClick
                         )
@@ -154,7 +169,7 @@ fun GameBoardScreen(
                         Spacer(modifier = Modifier.height(16.dp))
 
                         // Players' stats row
-                        if (lanViewModel.isConnected.value == true) {
+                        if (isConnected) {
                                 GlassCard(
                                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
@@ -167,7 +182,7 @@ fun GameBoardScreen(
                                                 Column {
                                                         Text(
                                                                 text =
-                                                                        "Player: ${lanViewModel.playerName}",
+                                                                        "Player: $playerName",
                                                                 color =
                                                                         AppColors.OnSurface.copy(
                                                                                 alpha = 0.7f
@@ -188,7 +203,7 @@ fun GameBoardScreen(
                                                 Column {
                                                         Text(
                                                                 text =
-                                                                        "Opponent: ${lanViewModel.opponentName}",
+                                                                        "Opponent: ${opponentName}",
                                                                 color =
                                                                         AppColors.OnSurface.copy(
                                                                                 alpha = 0.7f
@@ -269,9 +284,7 @@ fun GameBoardScreen(
                                                 }
                                         }
 
-                                        if (lanViewModel.isConnected.value &&
-                                                        !lanViewModel.isPlayerTurn
-                                        ) {
+                                        if (isConnected && !isPlayerTurn) {
                                                 Text(
                                                         text = "Opponent Thinking...",
                                                         color = AppColors.AccentYellow,
@@ -291,13 +304,13 @@ fun GameBoardScreen(
                                         onCellClick = { row, col ->
                                                 if (gameWinner.isEmpty() && !isBotThinking) {
                                                         if (lanViewModel.isConnected.value) {
+                                                        lanViewModel.onLocalMove(row, col)
+                                                        } else {
                                                                 gameViewModel.makeMove(
                                                                         row,
                                                                         col,
                                                                         isVsBot
                                                                 )
-                                                        } else {
-                                                                lanViewModel.onLocalMove(row, col)
                                                         }
                                                 }
                                         }

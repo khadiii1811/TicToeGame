@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.example.tictoe.LAN.*
 import com.example.tictoe.model.SoundManager
-import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
 class LANViewModel : ViewModel() {
@@ -35,6 +34,9 @@ class LANViewModel : ViewModel() {
     private val _opponentName = MutableStateFlow<String?>(null)
     val opponentName = _opponentName.asStateFlow()
 
+    private val _isPlayerTurn = MutableStateFlow(false)
+    val isPlayerTurn = _isPlayerTurn.asStateFlow()
+
     private var nsdHelper: NsdHelper? = null
     private var gameServer: GameServer? = null
     private var gameClient: GameClient? = null
@@ -42,11 +44,17 @@ class LANViewModel : ViewModel() {
     private var soundManager: SoundManager? = null
     private var onMoveReceivedCallback: ((Int, Int) -> Unit)? = null
 
-    var isPlayerTurn: Boolean = false
-        private set
-
     var symbol: String = "X" // Default symbol for the player
         private set
+
+    private var onMoveReceived: ((row: Int, col: Int) -> Unit)? = null
+    private var onTurnChanged: (() -> Unit)? = null
+
+    private var gameViewModel: GameViewModel? = null
+
+    fun setGameViewModel(vm: GameViewModel) {
+        gameViewModel = vm
+    }
 
     // Setters
     fun setSoundManager(manager: SoundManager) {
@@ -59,6 +67,10 @@ class LANViewModel : ViewModel() {
 
     fun setOpponentName(name: String) {
         _opponentName.value = name
+    }
+
+    fun setIsPlayerTurn(isTurn: Boolean) {
+        _isPlayerTurn.value = isTurn
     }
 
     // Before GameBoard functions
@@ -83,8 +95,9 @@ class LANViewModel : ViewModel() {
                             nsd.registerService()
                             nsdHelper = nsd
 
+                            symbol = "X"
                             _isHosting.value = true
-                            isPlayerTurn = true // host plays first
+                            _isPlayerTurn.value = true // host plays first
                         } else {
                             Log.e("LANViewModel_Server", "Server started but port is invalid.")
                             stopHosting()
@@ -161,8 +174,9 @@ class LANViewModel : ViewModel() {
                     },
                     onConnected = {
                         // Handle successful connection (e.g., update status to "playing")
+                        symbol = "O"
                         _isConnected.value = true
-                        isPlayerTurn = false // guest plays second
+                        _isPlayerTurn.value = false // guest plays second
 
                         // Optionally update the room status in your list
                         _availableRooms.update { rooms ->
@@ -176,7 +190,7 @@ class LANViewModel : ViewModel() {
             )
             gameClient = client
             _isConnected.value = true
-            isPlayerTurn = false // guest plays second
+            _isPlayerTurn.value = false // guest plays second
         } catch (e: Exception) {
             Log.e("LANViewModel_Client", "Error connecting to room: ${e.message}")
             gameClient?.disconnect()
@@ -197,8 +211,8 @@ class LANViewModel : ViewModel() {
             is Pair<*, *> -> {
                 val row = parsed.first as? Int ?: return
                 val col = parsed.second as? Int ?: return
-                onMoveReceivedCallback?.invoke(row, col)
-                isPlayerTurn = true
+                gameViewModel?.makeMoveLAN(row, col, if (symbol == "X") "O" else "X")
+                _isPlayerTurn.value = true
             }
             is String -> {
                 // This is likely a player name
@@ -226,8 +240,18 @@ class LANViewModel : ViewModel() {
 
     // In match functions
     // Provide a callback to call GameViewModel.makeMove() externally
-    fun setOnMoveReceivedCallback(callback: (Int, Int) -> Unit) {
-        onMoveReceivedCallback = callback
+    fun setOnMoveReceivedCallback(
+        onMove: (row: Int, col: Int) -> Unit,
+        onTurnChange: () -> Unit // Add this parameter
+    ) {
+        onMoveReceived = onMove
+        onTurnChanged = onTurnChange // Store the new callback
+    }
+
+    // When a move is actually received from the network
+    private fun handleMoveReceived(row: Int, col: Int) {
+        onMoveReceived?.invoke(row, col)
+        onTurnChanged?.invoke() // Call the turn change callback
     }
 
     // Send a move to opponent
@@ -238,14 +262,16 @@ class LANViewModel : ViewModel() {
         } else {
             gameClient?.send(msg)
         }
-        isPlayerTurn = false
+        _isPlayerTurn.value = false
     }
 
     // Called when player makes a local move
     fun onLocalMove(row: Int, col: Int) {
-        if (isPlayerTurn) {
+        if (_isPlayerTurn.value) {
+            // Update local board
+            gameViewModel?.makeMoveLAN(row, col, symbol)
             sendMove(row, col)
-            isPlayerTurn = false
+            _isPlayerTurn.value = false
         }
     }
 }

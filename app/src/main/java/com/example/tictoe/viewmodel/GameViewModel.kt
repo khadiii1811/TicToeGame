@@ -113,6 +113,20 @@ class GameViewModel : ViewModel() {
         }
     }
 
+    fun makeMoveLAN(row: Int, col: Int, symbol: String) {
+        // Only allow moves when cell is empty and game is not over
+        if (_gameBoard.value[row][col].isEmpty() && _gameWinner.value.isEmpty()) {
+            val newBoard = _gameBoard.value.map { it.clone() }.toTypedArray()
+            newBoard[row][col] = symbol
+            _gameBoard.value = newBoard
+            soundManager?.playClickSound()
+            checkForWinner(newBoard)
+            if (_gameWinner.value.isEmpty()) {
+                _currentTurn.value = if (symbol == "X") "O" else "X"
+            }
+        }
+    }
+
     // Make a move for the AI bot
     private fun makeBotMove() {
         viewModelScope.launch {
