@@ -58,6 +58,12 @@ class MenuViewModel : ViewModel() {
         _currentScreen.value = "available_rooms"
     }
     
+    // Navigate to create room screen
+    fun navigateToCreateRoom() {
+        Log.d("TicToe", "Navigating to create room screen")
+        _currentScreen.value = "create_room"
+    }
+    
     // Navigate directly to online matching screen (username comes from SettingsViewModel)
     fun navigateToOnlineMatching() {
         Log.d("TicToe", "Navigating to online matching screen")
@@ -85,10 +91,16 @@ class MenuViewModel : ViewModel() {
     }
     
     // Handle when online match is found
-    fun onMatchFound(playerName: String) {
-        Log.d("TicToe", "Match found with player: $playerName")
-        _matchedPlayerName.value = playerName
+    fun onMatchFound(matchedPlayerName: String) {
+        Log.d("TicToe", "Match found with player: $matchedPlayerName")
+        _matchedPlayerName.value = matchedPlayerName
         _isVsBot.value = false
         _currentScreen.value = "game"
+    }
+
+    // Navigate to room mode dialog
+    fun navigateToRoomMode() {
+        Log.d("TicToe", "Navigating to room mode")
+        _currentScreen.value = "room_mode"
     }
 } 
