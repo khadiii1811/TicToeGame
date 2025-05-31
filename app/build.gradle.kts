@@ -46,7 +46,6 @@ android {
 }
 
 dependencies {
-
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
@@ -65,7 +64,7 @@ dependencies {
 
     // WebSocket library
     implementation("org.java-websocket:Java-WebSocket:1.5.3")
-    
+
     // OkHttp for WebSocket client
     implementation("com.squareup.okhttp3:okhttp:4.11.0")
 
