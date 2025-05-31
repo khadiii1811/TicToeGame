@@ -3,7 +3,6 @@ package com.example.tictoe.di
 import android.content.Context
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStoreOwner
-import com.example.tictoe.model.OnlineGameRepository
 import com.example.tictoe.model.StatsRepository
 import com.example.tictoe.model.SoundManager
 import com.example.tictoe.viewmodel.GameViewModel
@@ -33,13 +32,6 @@ object AppModule {
      */
     fun provideSoundManager(context: Context): SoundManager {
         return SoundManager.getInstance(context)
-    }
-    
-    /**
-     * Provides OnlineGameRepository instance
-     */
-    fun provideOnlineGameRepository(context: Context): OnlineGameRepository {
-        return OnlineGameRepository(context, applicationScope)
     }
     
     /**

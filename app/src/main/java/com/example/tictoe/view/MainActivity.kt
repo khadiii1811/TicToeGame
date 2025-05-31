@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.tictoe.di.AppModule
-import com.example.tictoe.model.OnlineGameRepository
 import com.example.tictoe.model.SoundManager
 import com.example.tictoe.viewmodel.GameViewModel
 import com.example.tictoe.viewmodel.LANViewModel
@@ -28,9 +27,6 @@ class MainActivity : ComponentActivity() {
     private lateinit var gameViewModel: GameViewModel
     private lateinit var settingsViewModel: SettingsViewModel
     private lateinit var lanViewModel: LANViewModel
-
-    // Repositories
-    private lateinit var onlineGameRepository: OnlineGameRepository
 
     // SoundManager
     private lateinit var soundManager: SoundManager
@@ -46,9 +42,6 @@ class MainActivity : ComponentActivity() {
         gameViewModel = AppModule.provideGameViewModel(this)
         settingsViewModel = AppModule.provideSettingsViewModel(this)
         lanViewModel = AppModule.provideLANViewModel(this)
-
-        // Initialize OnlineGameRepository
-        onlineGameRepository = AppModule.provideOnlineGameRepository(applicationContext)
 
         // Khởi tạo SettingsViewModel với Context
         settingsViewModel.initialize(applicationContext)
@@ -87,7 +80,6 @@ class MainActivity : ComponentActivity() {
             // Set username in MenuViewModel whenever it changes in settings
             LaunchedEffect(username) {
                 menuViewModel.setPlayerName(username)
-                onlineGameRepository.setPlayerName(username)
                 lanViewModel.setPlayerName(username)
                 Log.d("TicToe", "Username updated to: $username")
             }
@@ -257,11 +249,6 @@ class MainActivity : ComponentActivity() {
         // Clean up resources when Activity is destroyed
         if (this::soundManager.isInitialized) {
             soundManager.release()
-        }
-
-        // Disconnect from any ongoing online game
-        if (this::onlineGameRepository.isInitialized) {
-            onlineGameRepository.disconnect()
         }
     }
 }

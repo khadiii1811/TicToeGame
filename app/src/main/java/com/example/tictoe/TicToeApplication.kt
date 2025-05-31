@@ -2,7 +2,6 @@ package com.example.tictoe
 
 import android.app.Application
 import android.util.Log
-import com.example.tictoe.model.OnlineGameRepository
 import com.example.tictoe.model.StatsRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,11 +15,7 @@ class TicToeApplication : Application() {
     val statsRepository: StatsRepository by lazy { 
         StatsRepository.getInstance(this)
     }
-    
-    val onlineGameRepository: OnlineGameRepository by lazy {
-        OnlineGameRepository(this, applicationScope)
-    }
-    
+
     override fun onCreate() {
         super.onCreate()
         
@@ -33,8 +28,6 @@ class TicToeApplication : Application() {
     }
     
     override fun onTerminate() {
-        // Clean up resources
-        onlineGameRepository.disconnect()
         super.onTerminate()
     }
 } 
